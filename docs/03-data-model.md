@@ -1,7 +1,8 @@
 # 3. Модель данных (черновик)
 
 > Объём сокращён (07.10.2026). Первая очередь: Product, ProductAlias, Drawing, Customer, Shipment
-> (приход, с номером партии и датой изготовления) + InvoiceLine/PLLine, CustomerShipment (отгрузка: ТТН №, дата,
+> (приход = партия: номер партии, дата изготовления, номер паспорта; варианты коробок по изделию из PL —
+> шт./коробку, брутто/нетто коробки) + InvoiceLine/PLLine, CustomerShipment (отгрузка: ТТН №, дата,
 > договор, спецификация, скан) + строки (изделие, кол-во, партия, цена BYN), Contract/Specification (цены заказчика),
 > CustomerRequest (заявка) + строки, StockMove. Expense, ExpenseAllocation,
 > CurrencyRate, StockLot (партии), Reservation — отложены. Цены: `price_cny` (справочно, из
