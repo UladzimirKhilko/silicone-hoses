@@ -5,7 +5,7 @@ import openpyxl
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import ProtectedError, Sum
+from django.db.models import F, ProtectedError, Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -31,7 +31,12 @@ from .models import Adjustment, Batch, ReceiptLine, Shipment, ShipmentLine
 
 @login_required
 def batch_list(request):
-    batches = Batch.objects.annotate(qty=Sum("lines__qty_expected")).prefetch_related("lines")
+    # Meta.ordering не применяется к запросам с агрегатами — сортируем явно.
+    batches = (
+        Batch.objects.annotate(qty=Sum("lines__qty_expected"))
+        .prefetch_related("lines")
+        .order_by(F("received_date").desc(nulls_first=True), "-created_at")
+    )
     return render(request, "stock/batch_list.html", {"batches": batches})
 
 
@@ -150,7 +155,7 @@ def _fill_prices(customer, rows):
 
 @login_required
 def shipment_list(request):
-    shipments = Shipment.objects.select_related("customer").annotate(qty=Sum("lines__qty"))
+    shipments = Shipment.objects.select_related("customer").annotate(qty=Sum("lines__qty")).order_by("-date", "-created_at")
     if request.GET.get("customer"):
         shipments = shipments.filter(customer_id=request.GET["customer"])
     if request.GET.get("month"):
@@ -226,7 +231,7 @@ def shipment_delete(request, pk):
 
 @login_required
 def adjustment_list(request):
-    items = Adjustment.objects.select_related("customer").annotate(qty=Sum("lines__qty"))
+    items = Adjustment.objects.select_related("customer").annotate(qty=Sum("lines__qty")).order_by("-date", "-created_at")
     return render(request, "stock/adjustment_list.html", {"items": items})
 
 

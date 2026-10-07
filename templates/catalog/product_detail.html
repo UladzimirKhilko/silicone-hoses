@@ -77,7 +77,7 @@
 <section class="card movements">
   <h2>Движение</h2>
   {% if movements %}
-  <table class="mini">
+  <div class="table-wrap"><table class="mini">
     <thead><tr><th>Дата</th><th>Документ</th><th>Партия</th><th class="num">Кол-во</th><th class="num">Остаток</th></tr></thead>
     <tbody>
     {% for m in movements reversed %}
@@ -85,7 +85,7 @@
         <td class="num {% if m.qty > 0 %}plus{% else %}minus{% endif %}">{% if m.qty > 0 %}+{% endif %}{{ m.qty }}</td><td class="num">{{ m.balance }}</td></tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}<p class="muted">Движений пока нет.</p>{% endif %}
 </section>
 {% endblock %}

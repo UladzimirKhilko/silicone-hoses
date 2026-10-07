@@ -187,3 +187,12 @@ def test_ttn_scan_upload_and_view(client_in, product, mtz, settings, tmp_path):
     assert b"".join(resp.streaming_content) == b"%PDF scan"
     client_in.logout()
     assert client_in.get(reverse("stock:shipment_ttn_scan", args=[ship.pk])).status_code == 302
+
+
+def test_lists_sorted_newest_first(client_in, product, mtz):
+    received(product, 100, dt.date(2025, 1, 1))
+    for day in (5, 20, 10):
+        ship = Shipment.objects.create(customer=mtz, date=dt.date(2025, 3, day))
+        services.post_shipment(ship, [{"product": product, "qty": 1}])
+    dates = [s.date.day for s in client_in.get(reverse("stock:shipment_list")).context["shipments"]]
+    assert dates == [20, 10, 5]
