@@ -258,3 +258,12 @@ def test_archive_falls_back_when_kind_missing(client_in, mtz):
     resp = client_in.get(reverse("catalog:drawings_archive"), {"ids": [scan_only.pk], "kind": "pdf"})
     names = zipfile.ZipFile(io.BytesIO(b"".join(resp.streaming_content))).namelist()
     assert names == ["25.1333 BSI D60L1000-2 (скан с подписями).pdf"]
+
+
+def test_download_names_have_ascii_fallback(client_in, mtz):
+    p = Product.objects.create(code="BSI 90/60", yapib="24.1155", customer=mtz)
+    d = _with_drawing(p)
+    cd = client_in.get(reverse("catalog:drawings_archive"), {"ids": [p.pk]})["Content-Disposition"]
+    assert cd.startswith('attachment; filename="BSI') and "filename*=utf-8''" in cd and cd.count(".zip") == 2
+    cd = client_in.get(reverse("catalog:drawing_view", args=[d.pk]))["Content-Disposition"]
+    assert cd.startswith('inline; filename="24.1155 BSI 90_60.pdf"')

@@ -1,0 +1,10 @@
+# SITE_ADDRESS в .env:
+#   :80                — только внутри сети предприятия, по адресу http://<ip-сервера>
+#   sklad.example.by   — доступ из интернета с автоматическим HTTPS (нужен домен на внешний IP)
+{$SITE_ADDRESS::80} {
+	encode gzip
+	request_body {
+		max_size 50MB
+	}
+	reverse_proxy web:8000
+}

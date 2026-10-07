@@ -6,12 +6,12 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import ProtectedError, Sum
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from catalog.models import Customer
-from catalog.views import search_products
+from catalog.views import file_response, search_products
 
 from . import services
 from .forms import (
@@ -210,7 +210,7 @@ def shipment_ttn_scan(request, pk):
     if not shipment.ttn_scan or not shipment.ttn_scan.storage.exists(shipment.ttn_scan.name):
         raise Http404("Скан ТТН не загружен")
     ext = shipment.ttn_scan.name.rsplit(".", 1)[-1]
-    return FileResponse(shipment.ttn_scan.open("rb"), filename=f"ТТН {shipment.ttn_number or shipment.pk}.{ext}")
+    return file_response(shipment.ttn_scan.open("rb"), f"ТТН {shipment.ttn_number or shipment.pk}.{ext}", as_attachment=False)
 
 
 @login_required

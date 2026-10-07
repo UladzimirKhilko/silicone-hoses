@@ -1,5 +1,6 @@
 import io
 import zipfile
+from urllib.parse import quote
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -139,10 +140,21 @@ def drawing_upload(request, pk):
     return redirect("catalog:product_detail", pk=pk)
 
 
+def file_response(fh, filename, as_attachment=True, content_type=None):
+    """FileResponse с русским именем файла и латинским запасным именем для старых браузеров."""
+    resp = FileResponse(fh, as_attachment=as_attachment, filename=filename, content_type=content_type)
+    ascii_name = filename.encode("ascii", "ignore").decode().strip(" ._-") or "file"
+    if "." in filename and "." not in ascii_name:
+        ascii_name += "." + filename.rsplit(".", 1)[-1]
+    kind = "attachment" if as_attachment else "inline"
+    resp["Content-Disposition"] = f'{kind}; filename="{ascii_name}"; filename*=utf-8\'\'{quote(filename)}'
+    return resp
+
+
 def _drawing_response(drawing, as_attachment):
     if not drawing.file or not drawing.file.storage.exists(drawing.file.name):
         raise Http404("Файл чертежа не найден")
-    return FileResponse(drawing.file.open("rb"), as_attachment=as_attachment, filename=drawing.download_name)
+    return file_response(drawing.file.open("rb"), drawing.download_name, as_attachment)
 
 
 @login_required
@@ -190,4 +202,4 @@ def drawings_archive(request):
             with d.file.open("rb") as fh:
                 zf.writestr(d.download_name, fh.read())
     buf.seek(0)
-    return FileResponse(buf, as_attachment=True, filename=f"Чертежи BSI ({len(drawings)} шт.).zip")
+    return file_response(buf, f"Чертежи BSI ({len(drawings)} шт.).zip", content_type="application/zip")
