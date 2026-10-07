@@ -37,7 +37,7 @@ class Command(BaseCommand):
         with open(opts["catalog"], newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 fields = {
-                    "yapib": row["yapib"] or None,
+                    "code": row["code"],
                     "customer": Customer.objects.get_or_create(name=row["customer"])[0],
                     "status": row["status"],
                     "notes": row["notes"],
@@ -54,7 +54,9 @@ class Command(BaseCommand):
                 for key in ("angle", "d1", "d2", "l1", "l2"):
                     if row[key]:
                         fields[key] = int(row[key]) if key == "angle" else _num(row[key])
-                _, was_created = Product.objects.update_or_create(code=row["code"], defaults=fields)
+                # Ключ — ЯПИБ; изделие без чертежа ищем по коду среди изделий без ЯПИБ.
+                lookup = {"yapib": row["yapib"]} if row["yapib"] else {"yapib": None, "code": row["code"]}
+                _, was_created = Product.objects.update_or_create(**lookup, defaults=fields)
                 created += was_created
                 updated += not was_created
 

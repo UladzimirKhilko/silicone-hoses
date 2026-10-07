@@ -45,8 +45,10 @@ class Product(models.Model):
         SERIAL = "serial", "серия"
         ARCHIVED = "archived", "снят"
 
-    code = models.CharField("Код (по штампу чертежа)", max_length=100, unique=True)
-    code_key = models.CharField(max_length=100, unique=True, editable=False)
+    # Код не уникален: у МТЗ и Амкадора есть разные чертежи с одним кодом «BSI D63L80-2».
+    # Изделие однозначно определяет только ЯПИБ (docs/09).
+    code = models.CharField("Код (по штампу чертежа)", max_length=100)
+    code_key = models.CharField(max_length=100, db_index=True, editable=False)
     yapib = models.CharField("Обозначение ЯПИБ", max_length=20, unique=True, null=True, blank=True)
     customer = models.ForeignKey(
         Customer, verbose_name="Заказчик", on_delete=models.PROTECT, null=True, blank=True, related_name="products"
@@ -63,12 +65,12 @@ class Product(models.Model):
     search_text = models.TextField(editable=False, blank=True)
 
     class Meta:
-        ordering = ["customer__name", "code"]
+        ordering = ["customer__name", "kind", "d1", "angle", "l1", "code"]
         verbose_name = "изделие"
         verbose_name_plural = "изделия"
 
     def __str__(self):
-        return self.code
+        return f"{self.code} (ЯПИБ {self.yapib})" if self.yapib else self.code
 
     @property
     def size_label(self):
@@ -126,6 +128,8 @@ class ProductAlias(models.Model):
         CARTON = "carton", "маркировка коробки"
         TTN = "ttn", "ТТН"
         REQUEST = "request", "заявка заказчика"
+        FACTORY = "factory", "код китайского завода"
+        CUSTOMER = "customer", "обозначение заказчика"
         OTHER = "other", "другое"
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="aliases")
@@ -147,11 +151,11 @@ class ProductAlias(models.Model):
         key = normalize_name(self.text)
         if not key:
             raise ValidationError({"text": "Пустое написание."})
-        other = Product.objects.filter(code_key=key).exclude(pk=self.product_id).first()
-        if other:
-            raise ValidationError({"text": f"Это код другого изделия: {other.code}."})
         if key == normalize_name(self.product.code):
             raise ValidationError({"text": "Совпадает с кодом этого изделия — синоним не нужен."})
+        other = Product.objects.filter(code_key=key).exclude(pk=self.product_id).first()
+        if other:
+            raise ValidationError({"text": f"Это код другого изделия: {other}."})
         taken = ProductAlias.objects.filter(normalized=key).exclude(pk=self.pk).select_related("product").first()
         if taken:
             raise ValidationError({"text": f"Уже привязано к изделию {taken.product.code}."})
@@ -172,7 +176,8 @@ class DrawingFile(models.Model):
     class Kind(models.TextChoices):
         PDF = "pdf", "чертёж (PDF)"
         SIGNED = "signed", "скан с подписями"
-        CHINA = "china", "для китайского завода"
+        CHINA = "china", "чертёж китайского завода"
+        CUSTOMER = "customer", "чертёж заказчика"
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="drawing_files")
     kind = models.CharField("Вид", max_length=10, choices=Kind.choices, default=Kind.PDF)
@@ -216,13 +221,19 @@ class DrawingFile(models.Model):
         return f"{base}{suffix}{ext}".replace("/", "_")
 
 
-def find_product(name):
-    """Точное сопоставление названия из документа: код по штампу или подтверждённый синоним.
-    Никаких догадок — если не нашли, решает человек."""
+def find_product(name, customer=None):
+    """Точное сопоставление названия из документа: подтверждённый синоним или код по штампу.
+
+    Если один код у нескольких изделий (разные заказчики), уточняем по заказчику; не вышло —
+    возвращаем None: решает человек. Никаких догадок.
+    """
     key = normalize_name(name)
     if not key:
         return None
     alias = ProductAlias.objects.select_related("product").filter(normalized=key).first()
     if alias:
         return alias.product
-    return Product.objects.filter(code_key=key).first()
+    candidates = list(Product.objects.filter(code_key=key))
+    if len(candidates) > 1 and customer is not None:
+        candidates = [p for p in candidates if p.customer_id == getattr(customer, "pk", customer)]
+    return candidates[0] if len(candidates) == 1 else None

@@ -12,17 +12,21 @@ from decimal import Decimal
 _PREFIX_RE = re.compile(r"^\s*патрубок\s+силиконовый\s+", re.IGNORECASE)
 _ORIGIN_RE = re.compile(r"\s*\(\s*китай\s*\)\s*$", re.IGNORECASE)
 _BSI_RE = re.compile(r"^BSI\s*", re.IGNORECASE)
+# Кириллица, неотличимая на глаз от латиницы (в именах файлов завода встречается «QЕ135Е50»).
+_HOMOGLYPHS = str.maketrans("АВЕКМНОРСТХаеокрсух", "ABEKMHOPCTXaeokpcyx")
 
 
 def normalize_name(text):
     """Ключ для точного сравнения названия из документа с кодом или синонимом.
 
     Безопасные отличия: регистр, пробелы, слова «Патрубок силиконовый», приписка «(Китай)»
-    из ТТН, приставка `BSI`, десятичная запятая (`63,5` = `63.5`).
+    из ТТН, приставка `BSI`, десятичная запятая (`63,5` = `63.5`), кириллические буквы,
+    которые выглядят как латинские (`QЕ` = `QE`).
     """
     s = str(text or "").strip()
     s = _PREFIX_RE.sub("", s)
     s = _ORIGIN_RE.sub("", s)
+    s = s.translate(_HOMOGLYPHS)
     s = _BSI_RE.sub("", s.strip())
     s = re.sub(r"(?<=\d),(?=\d)", ".", s)
     s = re.sub(r"\s+", "", s)

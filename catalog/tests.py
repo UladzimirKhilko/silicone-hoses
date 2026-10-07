@@ -179,7 +179,7 @@ def test_seed_and_import_drawings(tmp_path, db):
     (root / "МТЗ").mkdir(parents=True)
     (root / "МТЗ" / "a.pdf").write_bytes(PDF)
     catalog = tmp_path / "catalog.csv"
-    fields = ["yapib", "code", "customer", "status", "kind", "angle", "d1", "d2", "l1", "l2", "color", "drawing_pdf", "drawing_signed", "notes"]
+    fields = ["yapib", "code", "customer", "status", "kind", "angle", "d1", "d2", "l1", "l2", "color", "drawing_pdf", "drawing_signed", "drawing_china", "drawing_customer", "notes"]
     with open(catalog, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
@@ -211,3 +211,50 @@ def test_upload_builds_png_preview(client_in, mtz):
     resp = client_in.get(reverse("catalog:drawing_preview", args=[drawing.pk]))
     assert resp["Content-Type"] == "image/png"
     assert b"".join(resp.streaming_content).startswith(b"\x89PNG")
+
+
+def test_cyrillic_lookalikes_are_safe():
+    assert normalize_name("QЕ135Е50-CID50L=100х100") == normalize_name("QE135E50-CID50L=100x100")
+
+
+def test_same_code_two_drawings_needs_customer(db):
+    mtz = Customer.objects.create(name="МТЗ")
+    amk = Customer.objects.create(name="Амкадор")
+    a = Product.objects.create(code="BSI D63L80-2", yapib="24.1115", customer=mtz)
+    b = Product.objects.create(code="BSI D63L80-2", yapib="26.1497", customer=amk)
+    assert find_product("BSI D63L80-2") is None  # два чертежа — не угадываем
+    assert find_product("BSI D63L80-2", customer=mtz) == a
+    assert find_product("Патрубок силиконовый BSI D63L80-2 (Китай)", customer=amk) == b
+
+
+def test_import_single_page_from_multipage_pdf(tmp_path, db):
+    import pymupdf
+
+    from .management.commands.import_drawings import read_ref
+
+    doc = pymupdf.open()
+    for text in ("letter", "D127", "D102"):
+        doc.new_page().insert_text((72, 72), text)
+    (tmp_path / "pack.pdf").write_bytes(doc.tobytes())
+    name, data = read_ref(tmp_path, "pack.pdf#page=3")
+    with pymupdf.open(stream=data, filetype="pdf") as one:
+        assert one.page_count == 1 and "D102" in one[0].get_text()
+    assert name == "pack стр.3.pdf"
+    assert read_ref(tmp_path, "missing.pdf") is None
+
+
+def test_card_shows_bsi_drawing_before_factory_drawing(client_in, mtz):
+    p = Product.objects.create(code="BSI D50L100-2", yapib="26.1490", customer=mtz)
+    _with_drawing(p, kind="china", name="q.pdf")
+    signed = _with_drawing(p, kind="signed", name="s.pdf")
+    resp = client_in.get(reverse("catalog:product_detail", args=[p.pk]))
+    assert resp.context["current"] == signed
+
+
+def test_archive_falls_back_when_kind_missing(client_in, mtz):
+    scan_only = Product.objects.create(code="BSI D60L1000-2", yapib="25.1333", customer=mtz)
+    _with_drawing(scan_only, kind="signed", name="s.pdf")
+    _with_drawing(scan_only, kind="china", name="q.pdf")
+    resp = client_in.get(reverse("catalog:drawings_archive"), {"ids": [scan_only.pk], "kind": "pdf"})
+    names = zipfile.ZipFile(io.BytesIO(b"".join(resp.streaming_content))).namelist()
+    assert names == ["25.1333 BSI D60L1000-2 (скан с подписями).pdf"]

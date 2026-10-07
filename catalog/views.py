@@ -48,7 +48,7 @@ def product_detail(request, pk):
     product = get_object_or_404(
         Product.objects.select_related("customer").prefetch_related("drawing_files", "aliases"), pk=pk
     )
-    files = list(product.drawing_files.all())
+    files = sorted(product.drawing_files.all(), key=lambda f: DRAWING_PRIORITY.index(f.kind))
     current = next((f for f in files if f.kind == request.GET.get("file")), files[0] if files else None)
     return render(
         request,
@@ -143,18 +143,24 @@ def drawing_download(request, file_pk):
     return _drawing_response(get_object_or_404(DrawingFile.objects.select_related("product"), pk=file_pk), True)
 
 
+DRAWING_PRIORITY = [DrawingFile.Kind.PDF, DrawingFile.Kind.SIGNED, DrawingFile.Kind.CUSTOMER, DrawingFile.Kind.CHINA]
+
+
 @login_required
 def drawings_archive(request):
-    """ZIP с чертежами выбранных изделий — для отправки в Китай или заказчику."""
+    """ZIP с чертежами выбранных изделий — для отправки в Китай или заказчику.
+
+    Для каждого изделия берётся файл выбранного вида; если его нет — следующий по важности
+    (PDF → скан с подписями → чертёж заказчика → чертёж завода), чтобы в архив попали все изделия.
+    """
     ids = [i for i in request.GET.getlist("ids") if i.isdigit()]
     kind = request.GET.get("kind") or DrawingFile.Kind.PDF
-    drawings = DrawingFile.objects.filter(product_id__in=ids, kind=kind).select_related("product")
-    if kind != DrawingFile.Kind.PDF:
-        # Если нужного вида нет, кладём обычный PDF, чтобы в архиве были все выбранные изделия.
-        have = {d.product_id for d in drawings}
-        fallback = DrawingFile.objects.filter(product_id__in=ids, kind=DrawingFile.Kind.PDF).exclude(product_id__in=have)
-        drawings = list(drawings) + list(fallback.select_related("product"))
-    drawings = [d for d in drawings if d.file and d.file.storage.exists(d.file.name)]
+    order = [kind] + [k for k in DRAWING_PRIORITY if k != kind]
+    by_product = {}
+    for d in DrawingFile.objects.filter(product_id__in=ids).select_related("product"):
+        if d.file and d.file.storage.exists(d.file.name):
+            by_product.setdefault(d.product_id, []).append(d)
+    drawings = [min(files, key=lambda d: order.index(d.kind)) for files in by_product.values()]
     if not drawings:
         messages.error(request, "У выбранных изделий нет чертежей.")
         return redirect("catalog:product_list")
