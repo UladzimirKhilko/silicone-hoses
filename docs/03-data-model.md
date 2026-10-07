@@ -1,5 +1,10 @@
 # 3. Модель данных (черновик)
 
+> Объём сокращён (07.10.2026). Первая очередь: Product, ProductAlias, Drawing, Customer, Shipment
+> (приход) + InvoiceLine/PLLine, CustomerShipment (отгрузка), StockMove. Expense, ExpenseAllocation,
+> CurrencyRate, StockLot (партии), Reservation — отложены. Цены: `price_cny` (справочно, из
+> последнего инвойса) и `price_byn` (цена реализации) — поля изделия.
+
 Окончательно утверждается после разбора реальных документов.
 
 ```mermaid
