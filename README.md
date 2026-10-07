@@ -20,6 +20,7 @@
 | [docs/09-product-identification.md](docs/09-product-identification.md) | Как различать изделия: чертёж = изделие, синонимы вместо «нормализации» |
 | [docs/10-shipments-and-paperwork.md](docs/10-shipments-and-paperwork.md) | Отгрузки (ТТН), паспорта, бирки, заявка МТЗ — разбор образцов |
 | [docs/11-current-excel.md](docs/11-current-excel.md) | Разбор текущего учёта МТЗ в Excel, найденные ошибки |
+| [docs/12-ready-solutions.md](docs/12-ready-solutions.md) | Готовые решения (1С, МойСклад, InvenTree) vs своя разработка |
 | [docs/glossary.md](docs/glossary.md) | Глоссарий терминов |
 
 ## Папка `samples/`
