@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Поиск: 90-38, D60, 24.1155, красный, МТЗ…" autofocus>
+  <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if filters.customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="kind"><option value="">Любой тип</option>{% for v,l in kinds %}<option value="{{ v }}" {% if filters.kind == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="color"><option value="">Любой цвет</option>{% for v,l in colors %}<option value="{{ v }}" {% if filters.color == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="status"><option value="">Любой статус</option>{% for v,l in statuses %}<option value="{{ v }}" {% if filters.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <button class="btn">Найти</button>
+  {% if filters %}<a class="btn ghost" href="{% url 'catalog:product_list' %}">Сбросить</a>{% endif %}
+</form>
+
+<form method="get" action="{% url 'catalog:drawings_archive' %}" id="archive">
+  <div class="toolbar">
+    <span class="muted">Найдено: {{ products|length }}</span>
+    <span class="spacer"></span>
+    <select name="kind">{% for v,l in drawing_kinds %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+    <button class="btn" title="Отметьте изделия галочками">Скачать чертежи (ZIP)</button>
+    <a class="btn primary" href="{% url 'catalog:product_create' %}">+ Изделие</a>
+  </div>
+
+  <table class="products">
+    <thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('input[name=ids]').forEach(c=>c.checked=this.checked)" aria-label="Выбрать все"></th><th>Код</th><th>ЯПИБ</th><th>Заказчик</th><th>Тип / размеры</th><th>Цвет</th><th>Статус</th><th>Остаток</th><th>Чертёж</th></tr></thead>
+    <tbody>
+    {% for p in products %}
+      <tr>
+        <td class="check"><input type="checkbox" name="ids" value="{{ p.pk }}" aria-label="Выбрать {{ p.code }}"></td>
+        <td class="code"><a href="{{ p.get_absolute_url }}">{{ p.code }}</a></td>
+        <td data-label="ЯПИБ">{{ p.yapib|default:"—" }}</td>
+        <td data-label="Заказчик">{{ p.customer|default:"—" }}</td>
+        <td data-label="Тип">{{ p.get_kind_display|default:"" }} <span class="muted">{{ p.size_label }}</span></td>
+        <td data-label="Цвет">{% if p.color %}<span class="dot dot-{{ p.color }}"></span>{{ p.get_color_display }}{% endif %}</td>
+        <td data-label="Статус"><span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></td>
+        <td data-label="Остаток" class="muted" title="Появится на этапе 2">—</td>
+        <td data-label="Чертёж">{% with d=p.drawing_files.all %}{% if d %}<a class="btn small" href="{{ p.get_absolute_url }}">Открыть</a>{% else %}<span class="muted">нет</span>{% endif %}{% endwith %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="empty">Ничего не найдено.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</form>
+{% endblock %}

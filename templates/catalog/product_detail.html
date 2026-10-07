@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ product.code }} — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'catalog:product_list' %}">← Все изделия</a></p>
+<div class="head">
+  <div>
+    <h1>{{ product.code }}</h1>
+    <p class="muted">{% if product.yapib %}ЯПИБ {{ product.yapib }} · {% endif %}{{ product.customer|default:"заказчик не указан" }} · <span class="badge badge-{{ product.status }}">{{ product.get_status_display }}</span></p>
+  </div>
+  <a class="btn" href="{% url 'catalog:product_edit' product.pk %}">Изменить</a>
+</div>
+
+<div class="detail">
+  <section class="viewer card">
+    {% if files %}
+      <div class="tabs">
+        {% for f in files %}<a href="?file={{ f.kind }}" class="tab {% if f == current %}active{% endif %}">{{ f.get_kind_display }}</a>{% endfor %}
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="{% url 'catalog:drawing_download' current.pk %}">Скачать</a>
+        <a class="btn" href="{% url 'catalog:drawing_view' current.pk %}" target="_blank" rel="noopener">Открыть PDF</a>
+      </div>
+      {% if current.preview %}
+        <a href="{% url 'catalog:drawing_preview' current.pk %}" target="_blank" rel="noopener" title="Открыть крупно">
+          <img class="drawing" src="{% url 'catalog:drawing_preview' current.pk %}" alt="Чертёж {{ product.code }}">
+        </a>
+      {% else %}
+        <iframe class="pdf" src="{% url 'catalog:drawing_view' current.pk %}#view=FitH" title="Чертёж {{ product.code }}"></iframe>
+      {% endif %}
+    {% else %}
+      <p class="empty">Чертёж ещё не загружен.</p>
+    {% endif %}
+    <details class="upload">
+      <summary>Загрузить / заменить файл чертежа</summary>
+      <form method="post" enctype="multipart/form-data" action="{% url 'catalog:drawing_upload' product.pk %}">{% csrf_token %}
+        {{ upload_form.as_p }}<button class="btn">Загрузить</button>
+      </form>
+    </details>
+  </section>
+
+  <aside>
+    <section class="card">
+      <h2>Параметры</h2>
+      <dl class="params">
+        <dt>Тип</dt><dd>{{ product.get_kind_display|default:"—" }}</dd>
+        <dt>Размеры</dt><dd>{{ product.size_label|default:"—" }}</dd>
+        <dt>Цвет</dt><dd>{% if product.color %}<span class="dot dot-{{ product.color }}"></span>{{ product.get_color_display }}{% else %}—{% endif %}</dd>
+        <dt>Остаток</dt><dd class="muted">появится на этапе 2</dd>
+      </dl>
+      {% if product.notes %}<p class="note">{{ product.notes|linebreaksbr }}</p>{% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Синонимы</h2>
+      <p class="muted small">Как это изделие называют в инвойсах, упаковочных листах, ТТН и заявках. По ним сервис узнаёт изделие в документах.</p>
+      <ul class="aliases">
+        {% for a in product.aliases.all %}
+          <li><span>{{ a.text }} <span class="muted small">· {{ a.get_source_display }}</span></span>
+            <form method="post" action="{% url 'catalog:alias_delete' product.pk a.pk %}" class="inline">{% csrf_token %}<button class="link danger" title="Удалить">✕</button></form></li>
+        {% empty %}<li class="muted">Пока нет.</li>{% endfor %}
+      </ul>
+      <form method="post" action="{% url 'catalog:alias_add' product.pk %}" class="alias-form">{% csrf_token %}
+        {{ alias_form.text }} {{ alias_form.source }} <button class="btn small">Добавить</button>
+      </form>
+    </section>
+  </aside>
+</div>
+{% endblock %}

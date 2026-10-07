@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="{% if product %}{{ product.get_absolute_url }}{% else %}{% url 'catalog:product_list' %}{% endif %}">← Назад</a></p>
+<h1>{% if product %}Изменить {{ product.code }}{% else %}Новое изделие{% endif %}</h1>
+<form method="post" class="card form">{% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn primary">Сохранить</button>
+</form>
+{% endblock %}

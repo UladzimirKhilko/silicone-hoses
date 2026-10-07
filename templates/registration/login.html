@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Вход — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="login card">
+  <h1>Вход</h1>
+  {% if form.errors %}<div class="msg msg-error">Неверный логин или пароль.</div>{% endif %}
+  <form method="post">{% csrf_token %}
+    <label>Логин<input name="username" autocomplete="username" autofocus required></label>
+    <label>Пароль<input type="password" name="password" autocomplete="current-password" required></label>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn primary">Войти</button>
+  </form>
+</div>
+{% endblock %}
