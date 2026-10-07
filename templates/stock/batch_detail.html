@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ batch }} — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:batch_list' %}">← Приходы</a></p>
+<div class="head">
+  <div>
+    <h1>{{ batch }}</h1>
+    <p class="muted">
+      <span class="badge {% if batch.is_received %}badge-serial{% else %}badge-sample{% endif %}">{{ batch.get_status_display }}</span>
+      {% if batch.factory_orders %} · заказы завода {{ batch.factory_orders }}{% endif %}
+      {% if batch.manufactured %} · изготовлено {{ batch.manufactured }}{% endif %}
+      {% if batch.passport_number %} · паспорт № {{ batch.passport_number }}{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if not batch.is_received %}<a class="btn" href="{% url 'stock:batch_edit' batch.pk %}">Изменить</a>{% endif %}
+    <form method="post" action="{% url 'stock:batch_delete' batch.pk %}" class="inline" onsubmit="return confirm('Удалить партию?')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
+  </div>
+</div>
+{% if batch.notes %}<p class="note">{{ batch.notes|linebreaksbr }}</p>{% endif %}
+
+<form method="post" action="{% url 'stock:batch_receive' batch.pk %}">{% csrf_token %}
+<div class="table-wrap">
+<table class="products">
+  <thead><tr><th>Изделие</th><th class="num">По документам</th><th class="num">Принято</th><th class="num">Отгружено</th><th class="num">Осталось</th><th class="num">Цена Китая, CNY</th><th class="num">Приходная, BYN</th></tr></thead>
+  <tbody>
+  {% for l in lines %}
+    <tr>
+      <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a> <span class="muted small">{{ l.product.customer|default:"" }}</span></td>
+      <td data-label="По документам" class="num">{{ l.qty_expected }}</td>
+      <td data-label="Принято" class="num">
+        {% if batch.is_received %}{{ l.qty_received|default:l.qty_expected }}{% if l.shortage > 0 %} <span class="minus">(−{{ l.shortage }})</span>{% endif %}
+        {% else %}<input type="number" min="0" name="received_{{ l.pk }}" value="{{ l.qty_expected }}" class="qty">{% endif %}
+      </td>
+      <td data-label="Отгружено" class="num">{{ l.shipped }}</td>
+      <td data-label="Осталось" class="num strong">{{ l.left }}</td>
+      <td data-label="Цена Китая" class="num">{{ l.price_cny|floatformat:2|default:"—" }}</td>
+      <td data-label="Приходная" class="num">{% if batch.is_received %}{{ l.landed_price_byn|default:"—" }}{% else %}<input name="landed_{{ l.pk }}" value="{{ l.landed_price_byn|default:'' }}" class="qty" inputmode="decimal">{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if not batch.is_received %}
+  <div class="card receive">
+    <h2>Приёмка на складе</h2>
+    <p class="muted small">Проверьте фактическое количество по каждой строке. Меньше, чем по документам — недостача будет видна в партии.</p>
+    {{ receive_form.received_date.label_tag }} {{ receive_form.received_date }}
+    <button class="btn primary">Принять на склад</button>
+  </div>
+{% endif %}
+</form>
+{% endblock %}

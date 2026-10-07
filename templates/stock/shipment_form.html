@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Новая отгрузка — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:shipment_list' %}">← Отгрузки</a></p>
+<h1>Новая отгрузка</h1>
+<form method="post" enctype="multipart/form-data" class="card form">{% csrf_token %}
+  <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{{ f.errors }}</p>{% endfor %}</div>
+  <h2>Изделия</h2>
+  <p class="muted small">Партия «авто» — самая старая партия, где хватает всего количества. Отгрузить больше остатка сервис не даст.</p>
+  {% include "stock/_lines.html" %}
+  <button class="btn primary">Провести отгрузку</button>
+</form>
+{% endblock %}

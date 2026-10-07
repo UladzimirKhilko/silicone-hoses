@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Приходы — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="head"><h1>Приходы из Китая</h1><a class="btn primary" href="{% url 'stock:batch_create' %}">+ Новая поставка</a></div>
+<table class="products">
+  <thead><tr><th>Партия</th><th>Инвойс</th><th>Статус</th><th>Приёмка</th><th>Изготовлено</th><th class="num">Позиций</th><th class="num">Штук</th></tr></thead>
+  <tbody>
+  {% for b in batches %}
+    <tr>
+      <td class="code"><a href="{% url 'stock:batch_detail' b.pk %}">{{ b.number|default:"без номера" }}</a></td>
+      <td data-label="Инвойс">{{ b.invoice|default:"—" }}</td>
+      <td data-label="Статус"><span class="badge {% if b.is_received %}badge-serial{% else %}badge-sample{% endif %}">{{ b.get_status_display }}</span></td>
+      <td data-label="Приёмка">{{ b.received_date|date:"d.m.Y"|default:"—" }}</td>
+      <td data-label="Изготовлено">{{ b.manufactured|default:"—" }}</td>
+      <td data-label="Позиций" class="num">{{ b.lines.all|length }}</td>
+      <td data-label="Штук" class="num">{{ b.qty|default:0 }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="7" class="empty">Приходов пока нет.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -45,10 +45,18 @@
         <dt>Тип</dt><dd>{{ product.get_kind_display|default:"—" }}</dd>
         <dt>Размеры</dt><dd>{{ product.size_label|default:"—" }}</dd>
         <dt>Цвет</dt><dd>{% if product.color %}<span class="dot dot-{{ product.color }}"></span>{{ product.get_color_display }}{% else %}—{% endif %}</dd>
-        <dt>Остаток</dt><dd class="muted">появится на этапе 2</dd>
+        <dt>Остаток</dt><dd class="strong">{{ on_hand }} шт</dd>
+        {% if in_transit %}<dt>В пути</dt><dd>{{ in_transit }} шт</dd>{% endif %}
       </dl>
       {% if product.notes %}<p class="note">{{ product.notes|linebreaksbr }}</p>{% endif %}
     </section>
+
+    {% if batch_left %}
+    <section class="card">
+      <h2>Остаток по партиям</h2>
+      <table class="mini">{% for b, q in batch_left %}<tr><td><a href="{% url 'stock:batch_detail' b.pk %}">{{ b }}</a></td><td class="num">{{ q }}</td></tr>{% endfor %}</table>
+    </section>
+    {% endif %}
 
     <section class="card">
       <h2>Синонимы</h2>
@@ -65,4 +73,19 @@
     </section>
   </aside>
 </div>
+
+<section class="card movements">
+  <h2>Движение</h2>
+  {% if movements %}
+  <table class="mini">
+    <thead><tr><th>Дата</th><th>Документ</th><th>Партия</th><th class="num">Кол-во</th><th class="num">Остаток</th></tr></thead>
+    <tbody>
+    {% for m in movements reversed %}
+      <tr><td>{{ m.date|date:"d.m.Y" }}</td><td><a href="{{ m.url }}">{{ m.title }}</a></td><td class="muted">{{ m.batch.short_label }}</td>
+        <td class="num {% if m.qty > 0 %}plus{% else %}minus{% endif %}">{% if m.qty > 0 %}+{% endif %}{{ m.qty }}</td><td class="num">{{ m.balance }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Движений пока нет.</p>{% endif %}
+</section>
 {% endblock %}

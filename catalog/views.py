@@ -9,6 +9,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .forms import AliasForm, DrawingUploadForm, ProductForm
+from stock.models import Batch
+from stock.services import batch_balances, in_transit, movements, on_hand
+
 from .models import Customer, DrawingFile, Product, ProductAlias
 
 
@@ -27,7 +30,13 @@ def search_products(params):
 
 @login_required
 def product_list(request):
-    products = search_products(request.GET)
+    products = list(search_products(request.GET))
+    ids = [p.pk for p in products]
+    have, transit = on_hand(ids), in_transit(ids)
+    for p in products:
+        p.on_hand, p.in_transit = have.get(p.pk, 0), transit.get(p.pk, 0)
+    if request.GET.get("in_stock"):
+        products = [p for p in products if p.on_hand > 0]
     return render(
         request,
         "catalog/product_list.html",
@@ -50,6 +59,7 @@ def product_detail(request, pk):
     )
     files = sorted(product.drawing_files.all(), key=lambda f: DRAWING_PRIORITY.index(f.kind))
     current = next((f for f in files if f.kind == request.GET.get("file")), files[0] if files else None)
+    batches = [(b, q) for (p, b), q in batch_balances([product.pk]).items() if q]
     return render(
         request,
         "catalog/product_detail.html",
@@ -59,8 +69,18 @@ def product_detail(request, pk):
             "current": current,
             "alias_form": AliasForm(),
             "upload_form": DrawingUploadForm(),
+            "movements": movements(product),
+            "on_hand": sum(q for _, q in batches),
+            "in_transit": in_transit([product.pk]).get(product.pk, 0),
+            "batch_left": _batch_rows(batches),
         },
     )
+
+
+def _batch_rows(batches):
+    objs = Batch.objects.in_bulk([b for b, _ in batches])
+    rows = [(objs[b], q) for b, q in batches]
+    return sorted(rows, key=lambda r: (r[0].received_date is None, r[0].received_date))
 
 
 @login_required

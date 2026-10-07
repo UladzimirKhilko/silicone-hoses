@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Списания — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="head"><h1>Списания и корректировки</h1><a class="btn primary" href="{% url 'stock:adjustment_create' %}">+ Списание</a></div>
+<table class="products">
+  <thead><tr><th>Дата</th><th>Причина</th><th>Заказчик</th><th class="num">Штук</th></tr></thead>
+  <tbody>
+  {% for a in items %}
+    <tr>
+      <td class="code"><a href="{% url 'stock:adjustment_detail' a.pk %}">{{ a.date|date:"d.m.Y" }}</a></td>
+      <td data-label="Причина">{{ a.get_kind_display }}</td>
+      <td data-label="Заказчик">{{ a.customer|default:"—" }}</td>
+      <td data-label="Штук" class="num">{% if a.sign > 0 %}+{% else %}−{% endif %}{{ a.qty|default:0 }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="4" class="empty">Списаний нет.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

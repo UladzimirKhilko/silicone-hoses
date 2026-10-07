@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ shipment }} — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:shipment_list' %}">← Отгрузки</a></p>
+<div class="head">
+  <div><h1>{{ shipment }}</h1>{% if shipment.notes %}<p class="muted">{{ shipment.notes }}</p>{% endif %}</div>
+  <form method="post" action="{% url 'stock:shipment_delete' shipment.pk %}" class="inline" onsubmit="return confirm('Удалить отгрузку? Товар вернётся в остаток.')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
+</div>
+<table class="products">
+  <thead><tr><th>Изделие</th><th>Партия</th><th class="num">Кол-во</th><th class="num">Цена без НДС</th><th class="num">Сумма</th></tr></thead>
+  <tbody>
+  {% for l in lines %}
+    <tr>
+      <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a></td>
+      <td data-label="Партия"><a href="{% url 'stock:batch_detail' l.batch_id %}">{{ l.batch.short_label }}</a></td>
+      <td data-label="Кол-во" class="num">{{ l.qty }}</td>
+      <td data-label="Цена" class="num">{{ l.price_byn|default:"—" }}</td>
+      <td data-label="Сумма" class="num">{{ l.amount|floatformat:2|default:"—" }}</td>
+    </tr>
+  {% endfor %}
+  <tr class="total"><td colspan="4">Итого без НДС</td><td class="num strong">{{ total|floatformat:2 }}</td></tr>
+  </tbody>
+</table>
+<section class="card ttn">
+  <h2>ТТН</h2>
+  {% if shipment.ttn_scan %}<p><a class="btn" href="{% url 'stock:shipment_ttn_scan' shipment.pk %}" target="_blank">Открыть скан ТТН</a></p>{% endif %}
+  <form method="post" enctype="multipart/form-data" action="{% url 'stock:shipment_attach_ttn' shipment.pk %}" class="alias-form">{% csrf_token %}
+    <input name="ttn_number" value="{{ shipment.ttn_number }}" placeholder="№ ТТН">
+    <input type="file" name="ttn_scan" accept="application/pdf,image/*">
+    <button class="btn small">Сохранить</button>
+  </form>
+</section>
+{% endblock %}

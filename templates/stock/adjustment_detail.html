@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ adjustment }} — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:adjustment_list' %}">← Списания</a></p>
+<div class="head">
+  <div><h1>{{ adjustment }}</h1><p class="muted">{% if adjustment.customer %}{{ adjustment.customer }} · {% endif %}{{ adjustment.notes }}</p></div>
+  <form method="post" action="{% url 'stock:adjustment_delete' adjustment.pk %}" class="inline" onsubmit="return confirm('Удалить?')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
+</div>
+<table class="products">
+  <thead><tr><th>Изделие</th><th>Партия</th><th class="num">Кол-во</th></tr></thead>
+  <tbody>{% for l in lines %}<tr><td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a></td><td data-label="Партия">{{ l.batch.short_label }}</td><td data-label="Кол-во" class="num">{% if adjustment.sign > 0 %}+{% else %}−{% endif %}{{ l.qty }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endblock %}

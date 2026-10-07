@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Поставка — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% if batch %}{% url 'stock:batch_detail' batch.pk %}{% else %}{% url 'stock:batch_list' %}{% endif %}">← Назад</a></p>
+<h1>{% if batch %}Изменить {{ batch }}{% else %}Новая поставка из Китая{% endif %}</h1>
+<p class="muted">Поставка сначала «в пути»; на склад товар попадёт после приёмки.</p>
+<form method="post" class="card form">{% csrf_token %}
+  <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}</div>
+  <h2>Изделия</h2>
+  {% include "stock/_lines.html" %}
+  <button class="btn primary">Сохранить</button>
+</form>
+{% endblock %}

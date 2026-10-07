@@ -6,5 +6,6 @@ admin.site.site_header = "Патрубки BSI — администрирова�
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),
+    path("stock/", include("stock.urls")),
     path("", include("catalog.urls")),
 ]

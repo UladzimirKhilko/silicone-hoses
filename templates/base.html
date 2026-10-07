@@ -11,7 +11,10 @@
     <a class="brand" href="{% url 'catalog:product_list' %}">Патрубки BSI</a>
     {% if user.is_authenticated %}
     <nav>
-      <a href="{% url 'catalog:product_list' %}">Изделия</a>
+      <a href="{% url 'catalog:product_list' %}">Остатки</a>
+      <a href="{% url 'stock:batch_list' %}">Приходы</a>
+      <a href="{% url 'stock:shipment_list' %}">Отгрузки</a>
+      <a href="{% url 'stock:adjustment_list' %}">Списания</a>
       {% if user.is_staff %}<a href="{% url 'admin:index' %}">Админка</a>{% endif %}
       <form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button class="link">Выйти ({{ user.get_short_name|default:user.username }})</button></form>
     </nav>

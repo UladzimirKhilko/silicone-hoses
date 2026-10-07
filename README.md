@@ -3,7 +3,7 @@
 Сервис учёта поставок силиконовых патрубков от китайских заводов: от заказа на заводе
 до остатков на складе, себестоимости и ответа на заявку клиента.
 
-**Статус:** этап 1 (справочник изделий и чертежи) — готов к проверке. План — [docs/06-roadmap.md](docs/06-roadmap.md).
+**Статус:** этапы 1–2 (справочник и чертежи; остатки, приходы, отгрузки) — готовы к проверке. План — [docs/06-roadmap.md](docs/06-roadmap.md).
 
 ## Документация
 
@@ -38,6 +38,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python manage.py setup_roles          # роли «Руководитель», «Менеджер»
 .venv/bin/python manage.py seed_catalog         # 103 изделия и синонимы из data/
 .venv/bin/python manage.py import_drawings /путь/к/папке/Патрубки   # PDF чертежей (копия папки с Яндекс.Диска)
+.venv/bin/python manage.py import_mtz_excel "/путь/Учет патрубков МТЗ.xlsx"   # история приходов и отгрузок МТЗ
 .venv/bin/python manage.py createsuperuser
 .venv/bin/python manage.py runserver
 .venv/bin/pytest                                # тесты
@@ -53,5 +54,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `catalog/codes.py` | Нормализация названий (только безопасные отличия) и разбор кодов `BSI 90-D38L150/140-1` |
 | `catalog/models.py` | Заказчики, изделия (ключ — ЯПИБ), синонимы, файлы чертежей с PNG-превью |
 | `catalog/views.py` | Список с поиском, карточка, просмотр/скачивание чертежа, ZIP чертежей |
+| `stock/models.py` | Партии (поставки из Китая), строки прихода, отгрузки с ТТН, списания и корректировки |
+| `stock/services.py` | Остатки из документов, выбор партии для отгрузки, проверка «не больше остатка», лента движений |
 | `data/catalog.csv` | Справочник: код по штампу, ЯПИБ, заказчик, параметры, пути к чертежам |
 | `data/aliases.csv` | Подтверждённые синонимы из поставки TS2407202 |

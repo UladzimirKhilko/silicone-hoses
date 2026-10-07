@@ -1,0 +1,13 @@
+{{ formset.management_form }}
+{% if formset.non_form_errors %}<div class="msg msg-error">{{ formset.non_form_errors }}</div>{% endif %}
+<div class="table-wrap">
+<table class="lines">
+  <thead><tr>{% for f in formset.empty_form.visible_fields %}<th>{{ f.label }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for form in formset %}
+    <tr>{% for f in form.visible_fields %}<td data-label="{{ f.label }}">{{ f }}{% for e in f.errors %}<div class="err">{{ e }}</div>{% endfor %}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small">Пустые строки не учитываются. Нужно больше строк — проведите документ и создайте следующий.</p>

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Списание — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:adjustment_list' %}">← Списания</a></p>
+<h1>Списание / корректировка</h1>
+<form method="post" class="card form">{% csrf_token %}
+  <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{{ f.errors }}</p>{% endfor %}</div>
+  <h2>Изделия</h2>
+  {% include "stock/_lines.html" %}
+  <button class="btn primary">Провести</button>
+</form>
+{% endblock %}
