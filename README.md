@@ -16,6 +16,7 @@
 | [docs/05-architecture.md](docs/05-architecture.md) | Архитектура и технологии |
 | [docs/06-roadmap.md](docs/06-roadmap.md) | План разработки по этапам |
 | [docs/07-what-i-need.md](docs/07-what-i-need.md) | Что нужно от заказчика, вопросы, доступы, навыки |
+| [docs/08-sample-analysis.md](docs/08-sample-analysis.md) | Разбор реальных документов поставки TS2407202 и чертежей |
 | [docs/glossary.md](docs/glossary.md) | Глоссарий терминов |
 
 ## Папка `samples/`
