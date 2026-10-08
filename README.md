@@ -32,8 +32,8 @@
 
 ## Установка на сервер
 
-Docker: база PostgreSQL + приложение + веб-сервер Caddy. Пошаговая инструкция для администратора —
-[docs/deploy.md](docs/deploy.md).
+- **Windows Server 2019** (без Docker, одним скриптом): [docs/deploy-windows.md](docs/deploy-windows.md)
+- **Linux + Docker** (PostgreSQL, Caddy, HTTPS): [docs/deploy.md](docs/deploy.md)
 
 ## Запуск для разработки
 

@@ -6,6 +6,21 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_env_file(path):
+    """Переменные из файла .env рядом с проектом (установка на Windows без Docker).
+    Уже заданные переменные окружения не перезаписываются."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_file(BASE_DIR / ".env")
+
+
 def env_bool(name, default=False):
     return os.environ.get(name, str(default)).lower() in ("1", "true", "yes")
 
@@ -71,7 +86,14 @@ if os.environ.get("POSTGRES_DB"):
         }
     }
 else:
-    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": Path(os.environ.get("SQLITE_PATH", BASE_DIR / "db.sqlite3")),
+            # Несколько пользователей одновременно: ждать блокировку, а не падать с ошибкой.
+            "OPTIONS": {"timeout": 20, "init_command": "PRAGMA journal_mode=WAL;"},
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},

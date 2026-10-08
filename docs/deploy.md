@@ -1,5 +1,8 @@
 # Установка на сервер предприятия — инструкция для администратора
 
+> **Windows Server 2019 → см. [deploy-windows.md](deploy-windows.md)** (установка без Docker, одним скриптом).
+> Эта инструкция — для Linux-сервера с Docker.
+
 Сервис «Патрубки BSI» — веб-приложение (Python/Django) в Docker: три контейнера —
 база PostgreSQL, приложение, веб-сервер Caddy. Пользователи открывают его в браузере
 на компьютере или телефоне.
@@ -8,7 +11,7 @@
 
 | | Минимум |
 |---|---|
-| ОС | Linux (Ubuntu 22.04/24.04, Debian 12 — проще всего) или Windows Server 2019+ / Windows 10/11 с Docker Desktop (WSL 2) |
+| ОС | Linux (Ubuntu 22.04/24.04, Debian 12) или Windows 10/11 с Docker Desktop (WSL 2). Для Windows Server — deploy-windows.md |
 | Память | 2 ГБ (сервис использует ~0,5–1 ГБ) |
 | Диск | 5 ГБ свободно (сейчас данные ~0,3 ГБ, рост — чертежи и сканы ТТН) |
 | Docker | Docker Engine 24+ и плагин Docker Compose |
