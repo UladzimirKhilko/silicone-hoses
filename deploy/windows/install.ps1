@@ -9,12 +9,11 @@
     2. Создаёт файл настроек .env (если его ещё нет).
     3. Создаёт базу, скачивает чертежи с Яндекс.Диска, загружает справочник и историю МТЗ.
     4. Создаёт администратора (спросит логин и пароль).
-    5. Открывает порт в брандмауэре, ставит автозапуск при старте сервера и ежедневную копию.
+    5. Открывает порт в брандмауэре и ставит автозапуск при старте сервера.
   Повторный запуск безопасен: данные не задваиваются.
 #>
 param(
-    [int]$Port = 8000,
-    [string]$BackupDir = "C:\Backups\Patrubki"
+    [int]$Port = 8000
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,7 +30,7 @@ function Run($exe, [string[]]$arguments) {
 }
 
 # --- 1. Python ---
-Step "1/6 Проверяю Python"
+Step "1/5 Проверяю Python"
 $py = $null
 foreach ($cand in @("py -3.12", "py -3.13", "py -3.11", "python")) {
     $parts = $cand.Split(" ")
@@ -53,7 +52,7 @@ Run $venvPy @("-m", "pip", "install", "--upgrade", "pip", "-q")
 Run $venvPy @("-m", "pip", "install", "-r", "requirements.txt", "-q")
 
 # --- 2. Настройки ---
-Step "2/6 Файл настроек .env"
+Step "2/5 Файл настроек .env"
 $envFile = Join-Path $Root ".env"
 $ips = @((Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" }).IPAddress)
 if (-not (Test-Path $envFile)) {
@@ -75,7 +74,7 @@ if (-not (Test-Path $envFile)) {
 }
 
 # --- 3. База и данные ---
-Step "3/6 База данных и данные"
+Step "3/5 База данных и данные"
 Run $venvPy @("manage.py", "migrate", "--noinput", "-v", "0")
 Run $venvPy @("manage.py", "setup_roles")
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
@@ -91,7 +90,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- 4. Администратор ---
-Step "4/6 Администратор"
+Step "4/5 Администратор"
 & $venvPy manage.py shell -v 0 -c "from django.contrib.auth.models import User; raise SystemExit(0 if User.objects.filter(is_superuser=True).exists() else 1)"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Придумайте логин и пароль администратора (руководителя):"
@@ -101,7 +100,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- 5. Брандмауэр и автозапуск ---
-Step "5/6 Брандмауэр и автозапуск"
+Step "5/5 Брандмауэр и автозапуск"
 if (-not (Get-NetFirewallRule -DisplayName "Patrubki BSI" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "Patrubki BSI" -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow | Out-Null
 }
@@ -113,13 +112,6 @@ $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccou
 Unregister-ScheduledTask -TaskName "Patrubki BSI" -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName "Patrubki BSI" -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
 Start-ScheduledTask -TaskName "Patrubki BSI"
-
-# --- 6. Резервная копия ---
-Step "6/6 Ежедневная резервная копия в $BackupDir (02:30, хранится 30 дней)"
-$bAction = New-ScheduledTaskAction -Execute $venvPy -Argument "manage.py backup `"$BackupDir`" --keep-days 30" -WorkingDirectory $Root
-$bTrigger = New-ScheduledTaskTrigger -Daily -At 2:30am
-Unregister-ScheduledTask -TaskName "Patrubki BSI backup" -Confirm:$false -ErrorAction SilentlyContinue
-Register-ScheduledTask -TaskName "Patrubki BSI backup" -Action $bAction -Trigger $bTrigger -Principal $principal | Out-Null
 
 Start-Sleep -Seconds 5
 $ip = ($ips | Select-Object -First 1)
