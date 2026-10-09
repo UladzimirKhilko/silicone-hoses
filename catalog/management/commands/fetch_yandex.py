@@ -3,23 +3,62 @@
     python manage.py fetch_yandex /data/source
 
 Уже скачанные файлы того же размера пропускаются — команду можно запускать повторно,
-чтобы докачать новые чертежи.
+чтобы докачать новые или недокачанные файлы.
+
+Яндекс.Диск иногда отвечает временной ошибкой (500, 429, 503) при частых запросах —
+такие запросы повторяются с паузой; файл, который так и не скачался, не прерывает
+загрузку остальных.
 """
 
 import json
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 API = "https://cloud-api.yandex.net/v1/disk/public/resources"
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+ATTEMPTS = 6  # паузы 2, 4, 8, 16, 32 с — около минуты на один файл в худшем случае
+HEADERS = {"User-Agent": "patrubki-bsi/1.0"}
+PAUSE_BETWEEN_FILES = 0.3
+
+
+def _with_retries(action, sleep=time.sleep):
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            return action()
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_STATUSES or attempt == ATTEMPTS:
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == ATTEMPTS:
+                raise
+        sleep(2**attempt)
 
 
 def _get(url, **params):
-    with urllib.request.urlopen(f"{url}?{urllib.parse.urlencode(params)}", timeout=60) as resp:
-        return json.load(resp)
+    def action():
+        req = urllib.request.Request(f"{url}?{urllib.parse.urlencode(params)}", headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.load(resp)
+
+    return _with_retries(action)
+
+
+def _download(href, dst):
+    def action():
+        req = urllib.request.Request(href, headers=HEADERS)
+        tmp = dst.with_name(dst.name + ".part")
+        with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as fh:
+            while chunk := resp.read(1 << 16):
+                fh.write(chunk)
+        tmp.replace(dst)
+
+    _with_retries(action)
 
 
 def walk(public_key, path="/"):
@@ -47,16 +86,26 @@ class Command(BaseCommand):
     def handle(self, target, url, **opts):
         root = Path(target)
         got = skipped = 0
+        failed = []
         for item in walk(url):
             dst = root / item["path"].lstrip("/")
             if dst.exists() and dst.stat().st_size == item["size"]:
                 skipped += 1
                 continue
             dst.parent.mkdir(parents=True, exist_ok=True)
-            href = _get(f"{API}/download", public_key=url, path=item["path"])["href"]
-            tmp = dst.with_name(dst.name + ".part")
-            urllib.request.urlretrieve(href, tmp)
-            tmp.replace(dst)
+            try:
+                href = _get(f"{API}/download", public_key=url, path=item["path"])["href"]
+                _download(href, dst)
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                failed.append(f"{item['path']} ({e})")
+                self.stderr.write(f"  не скачался: {item['path']} — {e}")
+                continue
             got += 1
             self.stdout.write(f"  {item['path']}")
+            time.sleep(PAUSE_BETWEEN_FILES)
         self.stdout.write(self.style.SUCCESS(f"Скачано {got}, уже были {skipped}"))
+        if failed:
+            raise CommandError(
+                f"Не скачались {len(failed)} файл(ов). Запустите команду ещё раз — "
+                "уже скачанные файлы повторно не загружаются."
+            )

@@ -79,7 +79,17 @@ Run $venvPy @("manage.py", "migrate", "--noinput", "-v", "0")
 Run $venvPy @("manage.py", "setup_roles")
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Write-Host "Скачиваю папку «Патрубки» с Яндекс.Диска (~50 МБ, несколько минут)…"
-Run $venvPy @("manage.py", "fetch_yandex", "$Root\data\source")
+# Яндекс.Диск иногда временно отказывает при частых запросах: до 3 заходов, скачанное не повторяется.
+$fetched = $false
+foreach ($round in 1..3) {
+    & $venvPy manage.py fetch_yandex "$Root\data\source"
+    if ($LASTEXITCODE -eq 0) { $fetched = $true; break }
+    Write-Host "Не все файлы скачались, повторяю через 30 секунд (заход $round из 3)…" -ForegroundColor Yellow
+    Start-Sleep -Seconds 30
+}
+if (-not $fetched) {
+    throw "Не удалось скачать все файлы с Яндекс.Диска. Проверьте интернет на сервере и запустите install.ps1 ещё раз — скачанное повторно не загружается."
+}
 Run $venvPy @("manage.py", "seed_catalog")
 Run $venvPy @("manage.py", "import_drawings", "$Root\data\source")
 & $venvPy manage.py shell -v 0 -c "from stock.models import Batch; raise SystemExit(0 if Batch.objects.exists() else 1)"

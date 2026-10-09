@@ -267,3 +267,27 @@ def test_download_names_have_ascii_fallback(client_in, mtz):
     assert cd.startswith('attachment; filename="BSI') and "filename*=utf-8''" in cd and cd.count(".zip") == 2
     cd = client_in.get(reverse("catalog:drawing_view", args=[d.pk]))["Content-Disposition"]
     assert cd.startswith('inline; filename="24.1155 BSI 90_60.pdf"')
+
+
+def test_yandex_fetch_retries_temporary_errors():
+    import urllib.error
+
+    from .management.commands import fetch_yandex
+
+    calls, pauses = [], []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise urllib.error.HTTPError("u", 500, "INTERNAL SERVER ERROR", {}, None)
+        return "ok"
+
+    assert fetch_yandex._with_retries(flaky, sleep=pauses.append) == "ok"
+    assert len(calls) == 3 and pauses == [2, 4]
+
+    def forbidden():
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+
+    with pytest.raises(urllib.error.HTTPError):  # постоянная ошибка — без повторов
+        fetch_yandex._with_retries(forbidden, sleep=pauses.append)
+    assert pauses == [2, 4]
