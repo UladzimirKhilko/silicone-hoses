@@ -142,3 +142,31 @@ class AdjustmentLine(models.Model):
 
     class Meta:
         ordering = ["product__code"]
+
+
+class CartonSpec(models.Model):
+    """Коробка из упаковочного листа завода: сколько штук изделия в коробке и её вес.
+
+    По этим данным печатаются бирки (решение заказчика 07.10.2026: масса на бирке — брутто
+    из китайского упаковочного листа). У изделия в одной партии бывает несколько видов коробок
+    (например, по 80 и по 40 шт.) — основной считается тот, которых больше всего.
+    """
+
+    batch = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name="cartons")
+    product = models.ForeignKey(Product, verbose_name="Изделие", on_delete=models.PROTECT, related_name="carton_specs")
+    qty_per_carton = models.PositiveIntegerField("Шт. в коробке")
+    gross_kg = models.DecimalField("Брутто коробки, кг", max_digits=7, decimal_places=2)
+    net_kg = models.DecimalField("Нетто коробки, кг", max_digits=7, decimal_places=2, null=True, blank=True)
+    cartons = models.PositiveIntegerField("Коробок в партии", null=True, blank=True)
+    source = models.CharField("Откуда данные", max_length=120, blank=True)
+
+    class Meta:
+        ordering = ["product__code", "-cartons", "-qty_per_carton"]
+        constraints = [
+            models.UniqueConstraint(fields=["batch", "product", "qty_per_carton"], name="one_carton_size_per_product_in_batch")
+        ]
+        verbose_name = "коробка"
+        verbose_name_plural = "коробки"
+
+    def __str__(self):
+        return f"{self.product.code}: {self.qty_per_carton} шт / {self.gross_kg} кг"

@@ -16,4 +16,5 @@ if python manage.py shell -v 0 -c "from stock.models import Batch; raise SystemE
 else
   python manage.py import_mtz_excel "$SRC/Учет патрубков МТЗ.xlsx"
 fi
+python manage.py import_cartons
 echo "Готово. Создайте пользователей: docker compose exec web python manage.py createsuperuser"

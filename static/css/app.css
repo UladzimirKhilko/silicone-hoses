@@ -131,3 +131,12 @@ tr.total td { background: #f6f7f9; }
   .lines td { display: block; }
   .lines td::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted); }
 }
+
+.paperwork, .cartons, .batch-info { margin-top: 16px; }
+.paperwork .head { margin-bottom: 8px; }
+.batch-info { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 12px; }
+.batch-info h2 { width: 100%; margin: 0; }
+.batch-info label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.carton-form { margin-top: 8px; }
+.carton-form select { flex: 1 1 260px; }
+.carton-form input { flex: 0 1 120px; }

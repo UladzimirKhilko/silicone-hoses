@@ -98,6 +98,7 @@ if ($LASTEXITCODE -ne 0) {
 } else {
     Write-Host "История МТЗ уже перенесена — пропускаю"
 }
+Run $venvPy @("manage.py", "import_cartons")
 
 # --- 4. Администратор ---
 Step "4/5 Администратор"

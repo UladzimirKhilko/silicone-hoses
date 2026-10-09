@@ -196,3 +196,122 @@ def test_lists_sorted_newest_first(client_in, product, mtz):
         services.post_shipment(ship, [{"product": product, "qty": 1}])
     dates = [s.date.day for s in client_in.get(reverse("stock:shipment_list")).context["shipments"]]
     assert dates == [20, 10, 5]
+
+
+# --- Паспорт и бирки (этап 3) ---
+
+@pytest.fixture
+def batch_0225(product, mtz):
+    mtz.full_name = "ОАО «Минский тракторный завод»"
+    mtz.save()
+    batch = received(product, 950, dt.date(2025, 9, 18), number="02/25", manufactured="07.2025", passport_number="09/002/25")
+    from .models import CartonSpec
+
+    CartonSpec.objects.create(batch=batch, product=product, qty_per_carton=85, gross_kg=Decimal("16.0"))
+    return batch
+
+
+def _ship(customer, product, qty, ttn="5134450", batch=None):
+    ship = Shipment.objects.create(customer=customer, date=dt.date(2025, 11, 19), ttn_number=ttn)
+    services.post_shipment(ship, [{"product": product, "qty": qty, "batch": batch}])
+    return ship
+
+
+def test_box_plan_reproduces_real_labels(batch_0225, product, mtz):
+    from .paperwork import box_plan, format_kg
+
+    boxes = box_plan(list(_ship(mtz, product, 200).lines.all()))
+    assert [(b.qty, format_kg(b.gross_kg), b.count) for b in boxes] == [(85, "16,0", 2), (30, "5,65", 1)]
+    boxes = box_plan(list(_ship(mtz, product, 50, ttn="5134413").lines.all()))
+    assert [(b.qty, format_kg(b.gross_kg), b.count) for b in boxes] == [(50, "9,41", 1)]
+
+
+def test_main_carton_is_the_most_common(batch_0225, product):
+    from .models import CartonSpec
+    from .paperwork import main_spec
+
+    CartonSpec.objects.filter(batch=batch_0225).update(cartons=1)
+    CartonSpec.objects.create(batch=batch_0225, product=product, qty_per_carton=40, gross_kg=Decimal("8"), cartons=10)
+    assert main_spec(list(CartonSpec.objects.filter(batch=batch_0225))).qty_per_carton == 40
+
+
+def test_box_plan_without_carton_data(product, mtz):
+    from .paperwork import box_plan
+
+    received(product, 100, dt.date(2025, 1, 1))
+    boxes = box_plan(list(_ship(mtz, product, 30).lines.all()))
+    assert [(b.qty, b.gross_kg, b.count) for b in boxes] == [(30, None, 1)]
+
+
+def _docx_text(data):
+    import docx
+
+    d = docx.Document(io.BytesIO(data))
+    parts = [p.text for p in d.paragraphs]
+    for t in d.tables:
+        for row in t.rows:
+            parts += [c.text for c in row.cells]
+    return "\n".join(parts)
+
+
+def test_passport_contents(batch_0225, product, mtz):
+    from .paperwork import passport_docx
+
+    text = _docx_text(passport_docx(_ship(mtz, product, 200)))
+    for expected in ("№ 09/002/25 от 19.11.2025г", "ОАО «Минский тракторный завод»", "№ 5134450",
+                     "BSI D75L100-2", "200", "07.2025", "02/25", "Детали соответствуют требованиям: КД"):
+        assert expected in text
+
+
+def test_one_passport_per_batch(batch_0225, product, mtz):
+    from .paperwork import passport_docx
+
+    old = received(product, 10, dt.date(2025, 2, 8), number="01/25", passport_number="09/001/25")
+    ship = Shipment.objects.create(customer=mtz, date=dt.date(2025, 11, 19))
+    services.post_shipment(ship, [{"product": product, "qty": 5, "batch": old}, {"product": product, "qty": 100, "batch": batch_0225}])
+    text = _docx_text(passport_docx(ship))
+    assert text.count("Паспорт") == 2 and "09/001/25" in text and "09/002/25" in text
+
+
+def test_labels_contents(batch_0225, product, mtz):
+    import docx
+
+    from .paperwork import labels_docx
+
+    d = docx.Document(io.BytesIO(labels_docx(_ship(mtz, product, 200))))
+    rows = d.tables[0].rows
+    assert len(rows) == 2
+    assert "Количество: 85 шт." in rows[0].cells[0].text and "Масса: 16,0 кг" in rows[0].cells[0].text
+    assert rows[0].cells[1].text == "2"
+    assert "Количество: 30 шт." in rows[1].cells[0].text and "Масса: 5,65 кг" in rows[1].cells[0].text
+    assert "Номер партии: 02/25" in rows[1].cells[0].text and "Дата изготовления: 07.2025г." in rows[1].cells[0].text
+
+
+def test_paperwork_downloads_and_warnings(client_in, batch_0225, product, mtz):
+    ship = _ship(mtz, product, 200, ttn="")
+    resp = client_in.get(reverse("stock:shipment_detail", args=[ship.pk]))
+    assert resp.context["box_total"] == 3
+    assert any("ТТН" in w for w in resp.context["paperwork_warnings"])
+    for name in ("stock:shipment_passport", "stock:shipment_labels"):
+        r = client_in.get(reverse(name, args=[ship.pk]))
+        assert r.status_code == 200 and r["Content-Type"].startswith("application/vnd.openxmlformats")
+        assert b"".join(r.streaming_content)[:2] == b"PK"
+
+
+def test_batch_info_and_carton_editing(client_in, product):
+    from .models import CartonSpec
+
+    batch = received(product, 100, dt.date(2025, 9, 18))
+    client_in.post(reverse("stock:batch_info", args=[batch.pk]), {"number": "03/25", "manufactured": "10.2025", "passport_number": "09/003/25"})
+    batch.refresh_from_db()
+    assert (batch.number, batch.manufactured, batch.passport_number) == ("03/25", "10.2025", "09/003/25")
+    url = reverse("stock:carton_add", args=[batch.pk])
+    client_in.post(url, {"product": product.pk, "qty_per_carton": 85, "gross_kg": "16,0"})
+    client_in.post(url, {"product": product.pk, "qty_per_carton": 85, "gross_kg": "17"})  # дубль — отклоняется
+    assert list(CartonSpec.objects.values_list("qty_per_carton", "gross_kg")) == [(85, Decimal("16.00"))]
+
+
+def test_decimal_comma_accepted_in_shipment_price(client_in, product, mtz):
+    received(product, 100, dt.date(2025, 9, 18))
+    _shipment_post(client_in, mtz, product, 10, "8,14")
+    assert ShipmentLine.objects.get().price_byn == Decimal("8.14")

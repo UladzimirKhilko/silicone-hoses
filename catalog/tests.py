@@ -194,7 +194,14 @@ def test_seed_and_import_drawings(tmp_path, db):
 
     assert Product.objects.count() == 2 and ProductAlias.objects.count() == 1
     d54 = Product.objects.get(yapib="24.1131")
-    assert (d54.kind, d54.color, d54.d1) == ("straight", "black", Decimal("54"))
+    assert (d54.code, d54.kind, d54.color, d54.d1) == ("BSI D54L80-1", "straight", "black", Decimal("54"))
+
+    # Повторная загрузка не затирает правки пользователя, но дополняет пустые поля.
+    d54.status, d54.color = "archived", ""
+    d54.save()
+    call_command("seed_catalog", catalog=str(catalog), aliases=str(aliases), stdout=io.StringIO())
+    d54.refresh_from_db()
+    assert (d54.status, d54.color) == ("archived", "black")
     assert Product.objects.get(yapib="24.1155").size_label == "Ø90→60 · 148"
     assert d54.drawing_files.get().file.read() == PDF
 

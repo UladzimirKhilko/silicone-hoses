@@ -8,3 +8,4 @@ gunicorn>=23
 psycopg[binary]>=3.2
 whitenoise>=6.7
 waitress>=3.0
+python-docx>=1.1

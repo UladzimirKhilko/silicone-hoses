@@ -3,7 +3,7 @@ from django.forms import formset_factory
 
 from catalog.models import Customer, Product
 
-from .models import Adjustment, Batch, Shipment
+from .models import Adjustment, Batch, CartonSpec, Shipment
 
 
 class ProductField(forms.ModelChoiceField):
@@ -44,7 +44,7 @@ class BatchForm(forms.ModelForm):
 class ReceiptLineForm(forms.Form):
     product = ProductField(required=False)
     qty_expected = forms.IntegerField(label="Кол-во по документам", min_value=1, required=False)
-    price_cny = forms.DecimalField(label="Цена Китая, CNY", required=False, max_digits=16, decimal_places=10)
+    price_cny = forms.DecimalField(label="Цена Китая, CNY", required=False, max_digits=16, decimal_places=10, localize=True)
 
     def clean(self):
         data = super().clean()
@@ -72,7 +72,7 @@ class ShipmentForm(forms.ModelForm):
 class ShipmentLineForm(forms.Form):
     product = ProductField(required=False)
     qty = forms.IntegerField(label="Кол-во", min_value=1, required=False)
-    price_byn = forms.DecimalField(label="Цена без НДС", required=False, max_digits=10, decimal_places=2,
+    price_byn = forms.DecimalField(label="Цена без НДС", required=False, max_digits=10, decimal_places=2, localize=True,
                                    help_text="пусто — как в прошлой отгрузке этому заказчику")
     batch = BatchField()
 
@@ -110,3 +110,26 @@ AdjustmentLineFormSet = formset_factory(AdjustmentLineForm, extra=4)
 
 def filled(formset):
     return [f.cleaned_data for f in formset.forms if f.cleaned_data.get("product")]
+
+
+class CartonForm(forms.ModelForm):
+    """Коробка из упаковочного листа завода; изделия — только из этой партии."""
+
+    class Meta:
+        model = CartonSpec
+        fields = ["product", "qty_per_carton", "gross_kg", "net_kg", "cartons"]
+        localized_fields = ["gross_kg", "net_kg"]  # можно вводить «16,0»
+
+    def __init__(self, *args, batch, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.batch = batch
+        self.fields["product"] = ProductField()
+        self.fields["product"].queryset = self.fields["product"].queryset.filter(receipt_lines__batch=batch)
+
+    def clean(self):
+        data = super().clean()
+        if data.get("product") and data.get("qty_per_carton") and CartonSpec.objects.filter(
+            batch=self.batch, product=data["product"], qty_per_carton=data["qty_per_carton"]
+        ).exists():
+            raise forms.ValidationError("Такая коробка для этого изделия уже есть — удалите старую, чтобы заменить.")
+        return data

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load stock_tags %}
 {% block title %}{{ shipment }} — Патрубки BSI{% endblock %}
 {% block content %}
 <p><a href="{% url 'stock:shipment_list' %}">← Отгрузки</a></p>
@@ -21,6 +22,23 @@
   <tr class="total"><td colspan="4">Итого без НДС</td><td class="num strong">{{ total|floatformat:2 }}</td></tr>
   </tbody>
 </table>
+<section class="card paperwork">
+  <div class="head">
+    <h2>Паспорт и бирки</h2>
+    <div class="actions">
+      <a class="btn primary" href="{% url 'stock:shipment_passport' shipment.pk %}">Паспорт (Word)</a>
+      <a class="btn primary" href="{% url 'stock:shipment_labels' shipment.pk %}">Бирки (Word)</a>
+    </div>
+  </div>
+  {% for w in paperwork_warnings %}<div class="msg msg-error">{{ w }}</div>{% endfor %}
+  <p class="muted small">Раскладка по коробкам — по упаковочному листу завода (масса — брутто). Всего бирок: {{ box_total }}.</p>
+  <div class="table-wrap"><table class="mini">
+    <thead><tr><th>Изделие</th><th>Партия</th><th class="num">В коробке, шт</th><th class="num">Масса, кг</th><th class="num">Коробок (бирок)</th></tr></thead>
+    <tbody>{% for b in boxes %}<tr><td>{{ b.product.code }}</td><td>{{ b.batch.short_label }}</td><td class="num">{{ b.qty }}</td>
+      <td class="num">{% if b.gross_kg is None %}<span class="minus">нет данных</span>{% else %}{{ b.gross_kg|kg }}{% endif %}</td><td class="num">{{ b.count }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
 <section class="card ttn">
   <h2>ТТН</h2>
   {% if shipment.ttn_scan %}<p><a class="btn" href="{% url 'stock:shipment_ttn_scan' shipment.pk %}" target="_blank">Открыть скан ТТН</a></p>{% endif %}

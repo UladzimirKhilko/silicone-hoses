@@ -14,7 +14,14 @@ from django.db import transaction
 from catalog.codes import parse_parametric
 from catalog.models import Customer, Product, ProductAlias
 
-CUSTOMERS = ["МТЗ", "Гомсельмаш", "ММЗ", "БелАЗ", "Амкадор", "МАЗ МАН"]
+CUSTOMERS = {
+    "МТЗ": "ОАО «Минский тракторный завод»",
+    "Гомсельмаш": "ОАО «Гомсельмаш»",
+    "ММЗ": "ОАО «Минский моторный завод»",
+    "БелАЗ": "ОАО «БЕЛАЗ» – управляющая компания холдинга «БЕЛАЗ-ХОЛДИНГ»",
+    "Амкадор": "",
+    "МАЗ МАН": "",
+}
 
 
 def _num(value):
@@ -30,14 +37,16 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **opts):
-        for name in CUSTOMERS:
-            Customer.objects.get_or_create(name=name)
+        for name, full_name in CUSTOMERS.items():
+            customer, _ = Customer.objects.get_or_create(name=name)
+            if full_name and not customer.full_name:  # полное наименование — для паспорта; правки в админке не затираем
+                customer.full_name = full_name
+                customer.save()
 
         created = updated = 0
         with open(opts["catalog"], newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 fields = {
-                    "code": row["code"],
                     "customer": Customer.objects.get_or_create(name=row["customer"])[0],
                     "status": row["status"],
                     "notes": row["notes"],
@@ -56,9 +65,20 @@ class Command(BaseCommand):
                         fields[key] = int(row[key]) if key == "angle" else _num(row[key])
                 # Ключ — ЯПИБ; изделие без чертежа ищем по коду среди изделий без ЯПИБ.
                 lookup = {"yapib": row["yapib"]} if row["yapib"] else {"yapib": None, "code": row["code"]}
-                _, was_created = Product.objects.update_or_create(**lookup, defaults=fields)
-                created += was_created
-                updated += not was_created
+                product = Product.objects.filter(**lookup).first()
+                if product is None:
+                    Product.objects.create(**{**fields, **lookup, "code": row["code"]})
+                    created += 1
+                    continue
+                # Уже заведённое изделие: заполняем только пустые поля — правки пользователей не затираем.
+                changed = False
+                for key, value in fields.items():
+                    if value not in (None, "") and getattr(product, key) in (None, ""):
+                        setattr(product, key, value)
+                        changed = True
+                if changed:
+                    product.save()
+                    updated += 1
 
         aliases = 0
         alias_path = Path(opts["aliases"])
@@ -72,4 +92,4 @@ class Command(BaseCommand):
                         alias.save()
                         aliases += 1
 
-        self.stdout.write(self.style.SUCCESS(f"Изделий: новых {created}, обновлено {updated}; синонимов добавлено {aliases}"))
+        self.stdout.write(self.style.SUCCESS(f"Изделий: новых {created}, дополнено {updated}; синонимов добавлено {aliases}"))

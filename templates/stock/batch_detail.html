@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load stock_tags %}
 {% block title %}{{ batch }} — Патрубки BSI{% endblock %}
 {% block content %}
 <p><a href="{% url 'stock:batch_list' %}">← Приходы</a></p>
@@ -18,6 +19,14 @@
   </div>
 </div>
 {% if batch.notes %}<p class="note">{{ batch.notes|linebreaksbr }}</p>{% endif %}
+
+<form method="post" action="{% url 'stock:batch_info' batch.pk %}" class="card batch-info">{% csrf_token %}
+  <h2>Для паспорта и бирок</h2>
+  <label>Номер партии <input name="number" value="{{ batch.number }}" placeholder="02/25"></label>
+  <label>Дата изготовления <input name="manufactured" value="{{ batch.manufactured }}" placeholder="07.2025"></label>
+  <label>Номер паспорта <input name="passport_number" value="{{ batch.passport_number }}" placeholder="09/002/25"></label>
+  <button class="btn small">Сохранить</button>
+</form>
 
 <form method="post" action="{% url 'stock:batch_receive' batch.pk %}">{% csrf_token %}
 <div class="table-wrap">
@@ -42,7 +51,7 @@
 </table>
 </div>
 {% if not batch.is_received %}
-  <div class="card receive">
+  <div class="card receive" id="receive">
     <h2>Приёмка на складе</h2>
     <p class="muted small">Проверьте фактическое количество по каждой строке. Меньше, чем по документам — недостача будет видна в партии.</p>
     {{ receive_form.received_date.label_tag }} {{ receive_form.received_date }}
@@ -50,4 +59,26 @@
   </div>
 {% endif %}
 </form>
+
+<section class="card cartons">
+  <h2>Коробки (из упаковочного листа завода)</h2>
+  <p class="muted small">По ним печатаются бирки: сколько штук в коробке и вес брутто. Если у изделия несколько видов коробок, основной — тот, которых больше.</p>
+  <div class="table-wrap"><table class="mini">
+    <thead><tr><th>Изделие</th><th class="num">Шт. в коробке</th><th class="num">Брутто, кг</th><th class="num">Нетто, кг</th><th class="num">Коробок</th><th>Источник</th><th></th></tr></thead>
+    <tbody>
+    {% for c in cartons %}
+      <tr><td>{{ c.product.code }}</td><td class="num">{{ c.qty_per_carton }}</td><td class="num">{{ c.gross_kg|kg }}</td><td class="num">{{ c.net_kg|kg }}</td><td class="num">{{ c.cartons|default:"—" }}</td><td class="muted small">{{ c.source }}</td>
+        <td><form method="post" action="{% url 'stock:carton_delete' batch.pk c.pk %}" class="inline">{% csrf_token %}<button class="link danger" title="Удалить">✕</button></form></td></tr>
+    {% empty %}<tr><td colspan="7" class="muted">Данных о коробках нет.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <form method="post" action="{% url 'stock:carton_add' batch.pk %}" class="alias-form carton-form">{% csrf_token %}
+    {{ carton_form.product }}
+    <input type="number" name="qty_per_carton" min="1" placeholder="шт. в коробке" required>
+    <input name="gross_kg" placeholder="брутто, кг" inputmode="decimal" required>
+    <input name="net_kg" placeholder="нетто, кг" inputmode="decimal">
+    <input type="number" name="cartons" min="1" placeholder="коробок">
+    <button class="btn small">Добавить</button>
+  </form>
+</section>
 {% endblock %}

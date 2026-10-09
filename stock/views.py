@@ -13,9 +13,10 @@ from django.views.decorators.http import require_POST
 from catalog.models import Customer
 from catalog.views import file_response, search_products
 
-from . import services
+from . import paperwork, services
 from .forms import (
     AdjustmentForm,
+    CartonForm,
     AdjustmentLineFormSet,
     BatchForm,
     ReceiptLineFormSet,
@@ -24,7 +25,7 @@ from .forms import (
     ShipmentLineFormSet,
     filled,
 )
-from .models import Adjustment, Batch, ReceiptLine, Shipment, ShipmentLine
+from .models import Adjustment, Batch, CartonSpec, ReceiptLine, Shipment, ShipmentLine
 
 
 # --- Приходы (партии) ---
@@ -52,7 +53,48 @@ def batch_detail(request, pk):
     for line in lines:
         line.shipped = shipped.get(line.product_id, 0)
         line.left = balances.get((line.product_id, batch.pk), 0)
-    return render(request, "stock/batch_detail.html", {"batch": batch, "lines": lines, "receive_form": ReceiveForm(initial={"received_date": dt.date.today()})})
+    return render(request, "stock/batch_detail.html", {
+        "batch": batch, "lines": lines,
+        "receive_form": ReceiveForm(initial={"received_date": dt.date.today()}),
+        "cartons": batch.cartons.select_related("product"),
+        "carton_form": CartonForm(batch=batch),
+    })
+
+
+@login_required
+@require_POST
+def batch_info(request, pk):
+    """Номер партии, дата изготовления, номер паспорта — нужны для паспорта и бирок, правятся и после приёмки."""
+    batch = get_object_or_404(Batch, pk=pk)
+    for field in ("number", "manufactured", "passport_number"):
+        setattr(batch, field, request.POST.get(field, getattr(batch, field)).strip())
+    batch.save()
+    messages.success(request, "Данные партии сохранены.")
+    return redirect("stock:batch_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def carton_add(request, pk):
+    batch = get_object_or_404(Batch, pk=pk)
+    form = CartonForm(request.POST, batch=batch)
+    if form.is_valid():
+        spec = form.save(commit=False)
+        spec.batch = batch
+        spec.source = spec.source or "введено вручную"
+        spec.save()
+        messages.success(request, f"Коробка добавлена: {spec}.")
+    else:
+        messages.error(request, " ".join(e for errs in form.errors.values() for e in errs))
+    return redirect("stock:batch_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def carton_delete(request, pk, carton_pk):
+    get_object_or_404(CartonSpec, pk=carton_pk, batch_id=pk).delete()
+    messages.success(request, "Коробка удалена.")
+    return redirect("stock:batch_detail", pk=pk)
 
 
 @login_required
@@ -164,12 +206,51 @@ def shipment_list(request):
     return render(request, "stock/shipment_list.html", {"shipments": shipments, "customers": Customer.objects.all(), "filters": request.GET})
 
 
+def _paperwork_warnings(shipment, lines, boxes):
+    warnings = []
+    for batch in {line.batch for line in lines}:
+        missing = [label for label, value in (("номер партии", batch.number), ("номер паспорта", batch.passport_number),
+                                              ("дату изготовления", batch.manufactured)) if not value]
+        if missing:
+            warnings.append(f"В партии «{batch}» не указаны: {', '.join(missing)} — заполните в карточке партии.")
+    for box in boxes:
+        if box.gross_kg is None:
+            warnings.append(f"{box.product.code} (партия «{box.batch.short_label}»): нет данных о коробке — масса на бирке будет пустой. Добавьте коробку в карточке партии.")
+    if not shipment.ttn_number:
+        warnings.append("Не указан номер ТТН — в паспорте поле останется пустым.")
+    if not shipment.customer.full_name:
+        warnings.append(f"У заказчика «{shipment.customer}» нет полного наименования — в паспорт пойдёт краткое.")
+    return warnings
+
+
 @login_required
 def shipment_detail(request, pk):
     shipment = get_object_or_404(Shipment.objects.select_related("customer"), pk=pk)
-    lines = shipment.lines.select_related("product", "batch")
+    lines = list(shipment.lines.select_related("product", "batch"))
     total = sum((line.amount or 0) for line in lines)
-    return render(request, "stock/shipment_detail.html", {"shipment": shipment, "lines": lines, "total": total})
+    boxes = paperwork.box_plan(sorted(lines, key=lambda line: (line.product.code, line.batch_id)))
+    return render(request, "stock/shipment_detail.html", {
+        "shipment": shipment, "lines": lines, "total": total, "boxes": boxes,
+        "box_total": sum(b.count for b in boxes),
+        "paperwork_warnings": _paperwork_warnings(shipment, lines, boxes),
+    })
+
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@login_required
+def shipment_passport(request, pk):
+    shipment = get_object_or_404(Shipment.objects.select_related("customer"), pk=pk)
+    name = f"Паспорт {shipment.customer} {shipment.date:%d.%m.%Y}" + (f" ТТН {shipment.ttn_number}" if shipment.ttn_number else "")
+    return file_response(BytesIO(paperwork.passport_docx(shipment)), f"{name}.docx", content_type=DOCX)
+
+
+@login_required
+def shipment_labels(request, pk):
+    shipment = get_object_or_404(Shipment.objects.select_related("customer"), pk=pk)
+    name = f"Бирки {shipment.customer} {shipment.date:%d.%m.%Y}"
+    return file_response(BytesIO(paperwork.labels_docx(shipment)), f"{name}.docx", content_type=DOCX)
 
 
 @login_required

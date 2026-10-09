@@ -26,6 +26,7 @@ Stop-ScheduledTask -TaskName "Patrubki BSI" -ErrorAction SilentlyContinue
 Run $venvPy @("-m", "pip", "install", "-r", "requirements.txt", "-q")
 Run $venvPy @("manage.py", "migrate", "--noinput")
 Run $venvPy @("manage.py", "setup_roles")
+Run $venvPy @("manage.py", "import_cartons")
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Start-ScheduledTask -TaskName "Patrubki BSI"
 Write-Host "Обновлено." -ForegroundColor Green
