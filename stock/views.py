@@ -10,10 +10,11 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from catalog.models import Customer
+from catalog.models import Customer, Product
 from catalog.views import file_response, search_products
 
-from . import paperwork, services
+from . import paperwork, receipt_import, services
+from .importers import ParseError, parse_invoice, parse_packing_list, read_rows
 from .forms import (
     AdjustmentForm,
     CartonForm,
@@ -122,6 +123,72 @@ def batch_edit(request, pk=None):
             messages.success(request, f"Сохранено: {batch}. Товар в пути — примите его, когда придёт на склад.")
             return redirect("stock:batch_detail", pk=batch.pk)
     return render(request, "stock/batch_form.html", {"form": form, "formset": formset, "batch": batch if pk else None})
+
+
+# --- Поставка из файлов завода (этап 4) ---
+
+IMPORT_SESSION_KEY = "receipt_import_draft"
+
+
+@login_required
+def batch_import(request):
+    """Шаг 1: загрузить инвойс и/или упаковочный лист завода."""
+    if request.method == "POST":
+        invoice_file, pl_file = request.FILES.get("invoice"), request.FILES.get("packing_list")
+        if not invoice_file and not pl_file:
+            messages.error(request, "Выберите инвойс и/или упаковочный лист завода.")
+            return redirect("stock:batch_import")
+        try:
+            invoice = parse_invoice(read_rows(invoice_file, invoice_file.name)) if invoice_file else None
+            packing = parse_packing_list(read_rows(pl_file, pl_file.name)) if pl_file else None
+        except ParseError as e:
+            messages.error(request, str(e))
+            return redirect("stock:batch_import")
+        except Exception:  # битый или чужой файл — не падаем с 500, а объясняем
+            messages.error(request, "Не удалось прочитать файл. Нужен Excel (.xlsx или .xls) — инвойс или упаковочный лист завода.")
+            return redirect("stock:batch_import")
+        draft = receipt_import.build_draft(invoice, packing)
+        draft["files"] = [f.name for f in (invoice_file, pl_file) if f]
+        request.session[IMPORT_SESSION_KEY] = draft
+        return redirect("stock:batch_import_preview")
+    return render(request, "stock/batch_import.html")
+
+
+@login_required
+def batch_import_preview(request):
+    """Шаг 2: проверить сопоставление и количества, выбрать изделия для неопознанных строк, создать поставку."""
+    draft = request.session.get(IMPORT_SESSION_KEY)
+    if not draft:
+        return redirect("stock:batch_import")
+    rows = receipt_import.rows_from(draft)
+    header = {
+        "invoice": draft["header"].get("invoice", ""),
+        "factory_orders": "", "number": "", "manufactured": "", "passport_number": "",
+        "notes": "Загружено из файлов: " + ", ".join(draft.get("files", [])),
+    }
+    if request.method == "POST":
+        header = {k: request.POST.get(k, v).strip() for k, v in header.items()}
+        choices = {r.key: int(request.POST[f"product_{r.key}"]) for r in rows
+                   if not r.product_id and request.POST.get(f"product_{r.key}", "").isdigit()}
+        missing = [r for r in rows if not r.product_id and r.key not in choices]
+        if missing:
+            messages.error(request, f"Выберите изделие для строк: {', '.join(r.invoice_name or r.pl_name for r in missing)}.")
+        else:
+            batch = receipt_import.create_batch(draft, choices, header, remember=bool(request.POST.get("remember")), user=request.user)
+            del request.session[IMPORT_SESSION_KEY]
+            messages.success(request, f"Поставка создана: {batch}. Товар «в пути» — примите его, когда придёт на склад.")
+            return redirect("stock:batch_detail", pk=batch.pk)
+    products = Product.objects.in_bulk([r.product_id for r in rows if r.product_id] + [c for r in rows for c in r.candidate_ids])
+    for r in rows:
+        r.product = products.get(r.product_id)
+        r.candidates = [products[c] for c in r.candidate_ids if c in products]
+    return render(request, "stock/batch_import_preview.html", {
+        "draft": draft, "h": draft["header"], "rows": rows, "header": header,
+        "warnings": receipt_import.draft_warnings(draft, rows),
+        "all_products": Product.objects.select_related("customer").order_by("customer__name", "code"),
+        "unmatched": sum(1 for r in rows if not r.product_id),
+        "total_qty": sum(r.qty or 0 for r in rows),
+    })
 
 
 @login_required

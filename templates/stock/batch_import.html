@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Поставка из файлов — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:batch_list' %}">← Приходы</a></p>
+<h1>Поставка из файлов завода</h1>
+<p class="muted">Загрузите инвойс и упаковочный лист завода — сервис разберёт позиции, найдёт изделия и сверит количества.
+  Перед созданием поставки вы всё проверите.</p>
+<form method="post" enctype="multipart/form-data" class="card form import-form">{% csrf_token %}
+  <p><label>Инвойс (русский, Excel)</label><input type="file" name="invoice" accept=".xlsx,.xls"></p>
+  <p><label>Упаковочный лист завода (Packing List, Excel .xls/.xlsx)</label><input type="file" name="packing_list" accept=".xlsx,.xls"></p>
+  <p class="muted small">Можно загрузить только один из файлов. Из упаковочного листа берутся коробки для бирок, из инвойса — цены.</p>
+  <button class="btn primary">Разобрать файлы</button>
+</form>
+{% endblock %}

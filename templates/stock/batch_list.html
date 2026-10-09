@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Приходы — Патрубки BSI{% endblock %}
 {% block content %}
-<div class="head"><h1>Приходы из Китая</h1><a class="btn primary" href="{% url 'stock:batch_create' %}">+ Новая поставка</a></div>
+<div class="head"><h1>Приходы из Китая</h1><span class="actions"><a class="btn primary" href="{% url 'stock:batch_import' %}">Загрузить из файлов завода</a> <a class="btn" href="{% url 'stock:batch_create' %}">+ Вручную</a></span></div>
 <table class="products">
   <thead><tr><th>Партия</th><th>Инвойс</th><th>Статус</th><th>Приёмка</th><th>Изготовлено</th><th class="num">Позиций</th><th class="num">Штук</th></tr></thead>
   <tbody>

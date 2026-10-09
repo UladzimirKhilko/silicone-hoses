@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Проверка поставки — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'stock:batch_import' %}">← Загрузить другие файлы</a></p>
+<h1>Проверка поставки {{ h.invoice }}</h1>
+<p class="muted">
+  {% if h.invoice_date %}Инвойс от {{ h.invoice_date }}{% endif %}{% if h.contract %} · договор {{ h.contract }}{% endif %}
+  {% if h.invoice_total %} · сумма {{ h.invoice_total|floatformat:2 }} {{ h.currency }}{% endif %}
+  {% if h.total_cartons %} · {{ h.total_cartons }} мест, брутто {{ h.total_gross|floatformat:"-1" }} кг, нетто {{ h.total_net|floatformat:"-1" }} кг{% endif %}
+</p>
+<div class="summary">
+  <span class="badge badge-serial">позиций: {{ rows|length }}</span>
+  <span class="badge badge-serial">штук: {{ total_qty }}</span>
+  {% if unmatched %}<span class="badge badge-drawing_pending">не опознано: {{ unmatched }} — выберите изделие</span>{% else %}<span class="badge badge-serial">все изделия опознаны</span>{% endif %}
+  {% if h.mixed %}<span class="badge badge-sample">смешанных коробок (образцы): {{ h.mixed|length }}</span>{% endif %}
+</div>
+{% for w in warnings %}<div class="msg msg-error">{{ w }}</div>{% empty %}<div class="msg">Количества в инвойсе и упаковочном листе совпадают.</div>{% endfor %}
+
+<form method="post" class="import-preview">{% csrf_token %}
+<div class="table-wrap">
+<table class="products">
+  <thead><tr><th>В инвойсе</th><th>В упаковочном листе</th><th>Изделие в сервисе</th><th class="num">Инвойс, шт</th><th class="num">PL, шт</th><th class="num">Цена, {{ h.currency|default:"CNY" }}</th><th>Коробки</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="{% if not r.product_id %}row-attention{% elif r.qty_mismatch %}row-warn{% endif %}">
+      <td data-label="Инвойс">{{ r.invoice_name|default:"—" }}</td>
+      <td data-label="PL">{{ r.pl_name|default:"—" }}{% if r.pl_mark %}<div class="muted small">{{ r.pl_mark }}</div>{% endif %}</td>
+      <td data-label="Изделие">
+        {% if r.product %}
+          <a href="{{ r.product.get_absolute_url }}" target="_blank">{{ r.product.code }}</a> <span class="muted small">{{ r.product.yapib|default:"" }} {{ r.product.customer|default:"" }}</span>
+          {% if r.note %}<div class="muted small">{{ r.note }}</div>{% endif %}
+        {% else %}
+          <select name="product_{{ r.key }}" required>
+            <option value="">— выберите изделие —</option>
+            {% if r.candidates %}<optgroup label="Тот же код у разных заказчиков">{% for p in r.candidates %}<option value="{{ p.pk }}">{{ p.code }} · ЯПИБ {{ p.yapib }} · {{ p.customer }}</option>{% endfor %}</optgroup>{% endif %}
+            <optgroup label="Все изделия">{% for p in all_products %}<option value="{{ p.pk }}">{{ p.code }}{% if p.yapib %} · ЯПИБ {{ p.yapib }}{% endif %}{% if p.customer %} · {{ p.customer }}{% endif %}</option>{% endfor %}</optgroup>
+          </select>
+        {% endif %}
+      </td>
+      <td data-label="Инвойс, шт" class="num">{{ r.qty_invoice|default:"—" }}</td>
+      <td data-label="PL, шт" class="num {% if r.qty_mismatch %}minus{% endif %}">{{ r.qty_pl|default:"—" }}</td>
+      <td data-label="Цена" class="num">{{ r.price|floatformat:2|default:"—" }}</td>
+      <td data-label="Коробки" class="small">{% for c in r.cartons %}{{ c.cartons }} × {{ c.qty_per_carton }} шт ({{ c.gross_kg|floatformat:"-2" }} кг){% if not forloop.last %}<br>{% endif %}{% empty %}{% if r.in_mixed %}<span class="muted">в смешанной коробке</span>{% else %}—{% endif %}{% endfor %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="card form">
+  <h2>Данные поставки</h2>
+  <div class="grid2">
+    <p><label>Инвойс</label><input name="invoice" value="{{ header.invoice }}"></p>
+    <p><label>Заказы завода</label><input name="factory_orders" value="{{ header.factory_orders }}" placeholder="Q571, Q595"></p>
+    <p><label>Номер партии</label><input name="number" value="{{ header.number }}" placeholder="03/25"></p>
+    <p><label>Дата изготовления</label><input name="manufactured" value="{{ header.manufactured }}" placeholder="10.2025"></p>
+    <p><label>Номер паспорта</label><input name="passport_number" value="{{ header.passport_number }}" placeholder="09/003/25"></p>
+  </div>
+  <input type="hidden" name="notes" value="{{ header.notes }}">
+  <label class="check-label"><input type="checkbox" name="remember" value="1" checked> запомнить написания из этих документов как синонимы (в следующий раз узнаются сами)</label>
+  <p class="muted small">Поставка будет создана со статусом «в пути»: в остатки попадёт после приёмки на складе.</p>
+  <button class="btn primary">Создать поставку</button>
+</div>
+</form>
+{% endblock %}

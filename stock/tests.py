@@ -315,3 +315,117 @@ def test_decimal_comma_accepted_in_shipment_price(client_in, product, mtz):
     received(product, 100, dt.date(2025, 9, 18))
     _shipment_post(client_in, mtz, product, 10, "8,14")
     assert ShipmentLine.objects.get().price_byn == Decimal("8.14")
+
+
+# --- Поставка из файлов завода (этап 4) ---
+
+def _xlsx(rows):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return SimpleUploadedFile("file.xlsx", buf.getvalue())
+
+
+INVOICE_ROWS = [
+    [None, "QINGHE COUNTY TUSHUN AUTO PARTS CO.,LTD."],
+    ["Инвойс №. TS9000001 к договору 09/185 от 05.11.2024                      Дата: 2025/03/14"],
+    ["No.:", "ТНВЭД код", "Наименование", "К-во\n(шт)", "Цена за ед.\n(CNY)EXW", "Сумма\n(CNY)"],
+    [1, "3917310008", "Патрубок силиконовый BSI D75L100-2", 200, 6.6747474747474, 1334.9494949495],
+    [2, "3917310008", "Патрубок силиконовый BSI 90/60", 5, 28.57, 142.85],
+    [3, "3917310008", "Патрубок силиконовый BSI D63L80-2", 4, 5.09, 20.36],
+    ["Итого:", None, None, None, None, 1498.1594949495],
+]
+PL_ROWS = [
+    ["PACKING LIST装箱单-(23ggbykv/TS9000001)"],
+    ["Item on the carton", "matched models", "Color", "Carton Size(cm)", "Volume/CTN(M3)", "QTY/CTN(pcs)", "Cartons",
+     "N.W/CTN (KG)", "G.W/CTN (KG)", "Total QTY (pcs)", "Total Volume (M3)", "Total N.W (KG)", "Total G.W  (KG)", "Carton No."],
+    ["75*100", "BSI D75L100-2", "blue", "60x38x35", 0.0798, 85, 2, 15, 16, 170, 0.16, 30, 32, "1-2"],
+    ["75*100", "BSI D75L100-2", "blue", "60x38x35", 0.0798, 30, 1, 5, 5.65, 30, 0.08, 5, 5.65, "3"],
+    ["TS9000001-B", "BSI 90-60", "red", "60x38x35", 0.0798, 5, 1, 2, 3, 9, 0.08, 2, 3, ""],
+    [None, "63L80-2", "blue", None, None, 4, None, None, None, None, None, None, None, None],
+    [None, None, None, None, None, None, 4, None, None, 209, 0.3, 37, 40.65],
+]
+
+
+@pytest.fixture
+def import_catalog(mtz):
+    from catalog.models import ProductAlias
+
+    amk = Customer.objects.create(name="Амкадор")
+    p75 = Product.objects.create(code="BSI D75L100-2", yapib="24.1119", customer=mtz)
+    reducer = Product.objects.create(code="BSI 90/60", yapib="24.1155", customer=mtz)
+    d63 = Product.objects.create(code="BSI D63L80-2", yapib="24.1115", customer=mtz)
+    Product.objects.create(code="BSI D63L80-2", yapib="26.1497", customer=amk)
+    ProductAlias.objects.create(product=d63, text="63L80-2", source="packing_list")
+    return p75, reducer, d63
+
+
+def test_parse_invoice_and_packing_list():
+    from .importers import parse_invoice, parse_packing_list, read_rows
+
+    inv = parse_invoice(read_rows(_xlsx(INVOICE_ROWS), "i.xlsx"))
+    assert (inv.number, str(inv.date), inv.contract, inv.currency, len(inv.lines)) == ("TS9000001", "2025-03-14", "09/185 от 05.11.2024", "CNY", 3)
+    assert inv.lines[0].price == Decimal("6.6747474747")
+    pl = parse_packing_list(read_rows(_xlsx(PL_ROWS), "p.xlsx"))
+    assert pl.invoice == "TS9000001" and pl.total_cartons == 4 and pl.total_qty == 209
+    d75 = pl.items["BSI D75L100-2"]
+    assert d75.qty == 200 and [(c.qty_per_carton, c.cartons, c.gross_kg) for c in d75.cartons] == [(30, 1, Decimal("5.65")), (85, 2, Decimal("16"))]
+    assert pl.items["BSI 90-60"].in_mixed == 5 and pl.items["63L80-2"].qty == 4  # смешанная коробка
+    assert pl.mixed_cartons == [("TS9000001-B", [("BSI 90-60", 5), ("63L80-2", 4)])]
+
+
+def test_parse_rejects_wrong_file():
+    from .importers import ParseError, parse_invoice
+
+    with pytest.raises(ParseError):
+        parse_invoice([["просто", "таблица"], [1, 2]])
+
+
+def test_import_flow_matches_reconciles_and_creates_batch(client_in, import_catalog):
+    from .models import CartonSpec
+
+    p75, reducer, d63 = import_catalog
+    client_in.post(reverse("stock:batch_import"), {"invoice": _xlsx(INVOICE_ROWS), "packing_list": _xlsx(PL_ROWS)})
+    ctx = client_in.get(reverse("stock:batch_import_preview")).context
+    rows = {r.product_id: r for r in ctx["rows"]}
+    # 90-60 из PL — не код и не синоним изделия 90/60: строка требует выбора человека
+    assert ctx["unmatched"] == 1 and len(ctx["rows"]) == 4
+    # D63L80-2: код у двух заказчиков, но в PL опознан по синониму 63L80-2 → одна строка, изделие МТЗ
+    assert rows[d63.pk].qty_invoice == 4 and rows[d63.pk].qty_pl == 4 and rows[d63.pk].note
+    assert rows[p75.pk].qty_invoice == rows[p75.pk].qty_pl == 200
+    unmatched = next(r for r in ctx["rows"] if not r.product_id)
+    resp = client_in.post(reverse("stock:batch_import_preview"), {
+        "invoice": "TS9000001", "number": "03/25", "manufactured": "02.2025", "passport_number": "09/003/25",
+        "factory_orders": "Q700", "notes": "", "remember": "1", f"product_{unmatched.key}": reducer.pk,
+    })
+    batch = Batch.objects.get(invoice="TS9000001")
+    assert resp.status_code == 302 and batch.status == Batch.Status.IN_TRANSIT
+    lines = {line.product_id: line for line in batch.lines.all()}
+    assert lines[reducer.pk].qty_expected == 5 and lines[p75.pk].price_cny == Decimal("6.6747474747")
+    assert services.in_transit()[p75.pk] == 200
+    assert sorted(CartonSpec.objects.filter(batch=batch).values_list("qty_per_carton", "gross_kg")) == [(30, Decimal("5.65")), (85, Decimal("16.00"))]
+    # выбранное человеком написание из PL запомнено — в следующий раз узнается само
+    from catalog.models import find_product
+
+    assert find_product("BSI 90-60") == reducer
+
+
+def test_import_warns_about_mismatch_and_duplicate(client_in, import_catalog):
+    Batch.objects.create(invoice="TS9000001")
+    rows = [list(r) for r in INVOICE_ROWS]
+    rows[3][3] = 210  # в инвойсе 210, в PL 200
+    client_in.post(reverse("stock:batch_import"), {"invoice": _xlsx(rows), "packing_list": _xlsx(PL_ROWS)})
+    warnings = client_in.get(reverse("stock:batch_import_preview")).context["warnings"]
+    assert any("уже есть" in w for w in warnings) and any("210" in w and "200" in w for w in warnings)
+
+
+def test_import_rejects_garbage_file(client_in):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    resp = client_in.post(reverse("stock:batch_import"), {"invoice": SimpleUploadedFile("x.xlsx", b"not excel")}, follow=True)
+    assert "Не удалось прочитать файл" in resp.content.decode()

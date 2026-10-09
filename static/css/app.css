@@ -140,3 +140,10 @@ tr.total td { background: #f6f7f9; }
 .carton-form { margin-top: 8px; }
 .carton-form select { flex: 1 1 260px; }
 .carton-form input { flex: 0 1 120px; }
+
+.summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+tr.row-attention td { background: #fff4e5; }
+tr.row-warn td { background: #fdecea; }
+.import-preview select { min-width: 260px; max-width: 100%; }
+.import-preview .card { margin-top: 16px; }
+.import-form input[type=file] { padding: 6px; }
