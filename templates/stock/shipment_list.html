@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load stock_tags %}
 {% block title %}Отгрузки — Патрубки BSI{% endblock %}
 {% block content %}
 <div class="head"><h1>Отгрузки</h1><a class="btn primary" href="{% url 'stock:shipment_create' %}">+ Отгрузка</a></div>
@@ -8,17 +9,26 @@
   <button class="btn">Показать</button>
   {% if filters %}<a class="btn ghost" href="{% url 'stock:shipment_list' %}">Сбросить</a>{% endif %}
 </form>
+<div class="table-wrap">
 <table class="products">
-  <thead><tr><th>Дата</th><th>Заказчик</th><th>ТТН</th><th class="num">Штук</th></tr></thead>
+  <thead><tr><th>Дата</th><th>Заказчик</th><th>ТТН</th><th class="num">Штук</th><th class="num">Сумма без НДС</th>{% if can_see_costs %}<th class="num">Прибыль</th><th class="num">Маржа</th>{% endif %}</tr></thead>
   <tbody>
   {% for s in shipments %}
     <tr>
       <td class="code"><a href="{% url 'stock:shipment_detail' s.pk %}">{{ s.date|date:"d.m.Y" }}</a></td>
       <td data-label="Заказчик">{{ s.customer }}</td>
       <td data-label="ТТН">{{ s.ttn_number|default:"—" }}{% if s.ttn_scan %} 📎{% endif %}</td>
-      <td data-label="Штук" class="num">{{ s.qty|default:0 }}</td>
+      <td data-label="Штук" class="num">{{ s.t.qty }}</td>
+      <td data-label="Сумма" class="num">{{ s.t.amount|money }}</td>
+      {% if can_see_costs %}{% include "stock/_profit_cells.html" with t=s.t %}{% endif %}
     </tr>
-  {% empty %}<tr><td colspan="4" class="empty">Отгрузок нет.</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="7" class="empty">Отгрузок нет.</td></tr>{% endfor %}
+  {% if shipments %}
+  <tr class="total"><td colspan="3">Итого</td><td class="num strong">{{ total_qty }}</td><td class="num strong">{{ total_amount|money }}</td>
+    {% if can_see_costs %}{% include "stock/_profit_cells.html" with t=total %}{% endif %}</tr>
+  {% endif %}
   </tbody>
 </table>
+</div>
+{% if can_see_costs %}<p class="muted small">Прибыль = сумма без НДС − учётная цена партии × кол-во. «≈» — у партии нет своей учётной цены, взята последняя известная по изделию. Строки без цены продажи или без учётной цены в прибыль не входят. <a href="{% url 'stock:profit_report' %}">Отчёт «Продажи и прибыль»</a></p>{% endif %}
 {% endblock %}

@@ -147,3 +147,11 @@ tr.row-warn td { background: #fdecea; }
 .import-preview select { min-width: 260px; max-width: 100%; }
 .import-preview .card { margin-top: 16px; }
 .import-form input[type=file] { padding: 6px; }
+
+/* Этап 5: цены и прибыль */
+.prices { margin-top: 16px; }
+.prices .batch-info { margin: 8px 0; }
+.prices > .btn { margin-top: 8px; }
+.stock-value { margin: 0 0 12px; }
+.report-grid { display: grid; gap: 16px; }
+.report-grid .card h2 { margin-bottom: 6px; }

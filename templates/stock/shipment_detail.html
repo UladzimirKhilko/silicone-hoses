@@ -7,21 +7,30 @@
   <div><h1>{{ shipment }}</h1>{% if shipment.notes %}<p class="muted">{{ shipment.notes }}</p>{% endif %}</div>
   <form method="post" action="{% url 'stock:shipment_delete' shipment.pk %}" class="inline" onsubmit="return confirm('Удалить отгрузку? Товар вернётся в остаток.')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
 </div>
+<div class="table-wrap">
 <table class="products">
-  <thead><tr><th>Изделие</th><th>Партия</th><th class="num">Кол-во</th><th class="num">Цена без НДС</th><th class="num">Сумма</th></tr></thead>
+  <thead><tr><th>Изделие</th><th>Партия</th><th class="num">Кол-во</th><th class="num">Цена без НДС</th><th class="num">Сумма</th>
+    {% if can_see_costs %}<th class="num">Учётная цена</th><th class="num">Прибыль</th>{% endif %}</tr></thead>
   <tbody>
   {% for l in lines %}
     <tr>
       <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a></td>
       <td data-label="Партия"><a href="{% url 'stock:batch_detail' l.batch_id %}">{{ l.batch.short_label }}</a></td>
       <td data-label="Кол-во" class="num">{{ l.qty }}</td>
-      <td data-label="Цена" class="num">{{ l.price_byn|default:"—" }}</td>
-      <td data-label="Сумма" class="num">{{ l.amount|floatformat:2|default:"—" }}</td>
+      <td data-label="Цена" class="num">{{ l.price_byn|money }}</td>
+      <td data-label="Сумма" class="num">{{ l.amount|money }}</td>
+      {% if can_see_costs %}
+      <td data-label="Учётная" class="num">{% if l.unit_cost is None %}<span class="minus">нет</span>{% else %}{% if l.cost_approx %}<span title="У партии нет своей учётной цены — взята последняя известная по изделию">≈ </span>{% endif %}{{ l.unit_cost|money }}{% endif %}</td>
+      <td data-label="Прибыль" class="num{% if l.profit < 0 %} minus{% endif %}">{{ l.profit|money }}</td>
+      {% endif %}
     </tr>
   {% endfor %}
-  <tr class="total"><td colspan="4">Итого без НДС</td><td class="num strong">{{ total|floatformat:2 }}</td></tr>
+  <tr class="total"><td colspan="4">Итого без НДС</td><td class="num strong">{{ total|money }}</td>
+    {% if can_see_costs %}<td class="num">{{ totals.cost|money }}</td><td class="num strong{% if totals.profit < 0 %} minus{% endif %}">{% if totals.approx %}≈ {% endif %}{{ totals.profit|money }}{% if totals.margin is not None %}<div class="muted small">маржа {{ totals.margin|pct }}</div>{% endif %}</td>{% endif %}</tr>
   </tbody>
 </table>
+</div>
+{% if can_see_costs and not totals.complete %}<p class="msg msg-error">{% if totals.qty_no_price %}Без цены реализации: {{ totals.qty_no_price }} шт. {% endif %}{% if totals.qty_no_cost %}Без учётной цены: {{ totals.qty_no_cost }} шт — укажите её в карточке партии. {% endif %}Эти строки в прибыль не вошли.</p>{% endif %}
 <section class="card paperwork">
   <div class="head">
     <h2>Паспорт и бирки</h2>

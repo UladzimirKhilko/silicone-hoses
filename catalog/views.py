@@ -10,7 +10,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .forms import AliasForm, DrawingUploadForm, ProductForm
-from stock.models import Batch
+from stock import pricing
+from stock.models import Batch, ShipmentLine
 from stock.services import batch_balances, in_transit, movements, on_hand
 
 from .models import Customer, DrawingFile, Product, ProductAlias
@@ -33,16 +34,21 @@ def search_products(params):
 def product_list(request):
     products = list(search_products(request.GET))
     ids = [p.pk for p in products]
-    have, transit = on_hand(ids), in_transit(ids)
+    balances = batch_balances(ids)
+    have, transit = on_hand(ids, balances), in_transit(ids)
     for p in products:
         p.on_hand, p.in_transit = have.get(p.pk, 0), transit.get(p.pk, 0)
     if request.GET.get("in_stock"):
         products = [p for p in products if p.on_hand > 0]
+    value = pricing.stock_value(balances) if pricing.can_see_costs(request.user) else None
     return render(
         request,
         "catalog/product_list.html",
         {
             "products": products,
+            "total_on_hand": sum(p.on_hand for p in products),
+            "stock_value": value[1] if value else None,
+            "stock_value_missing": value[2] if value else 0,
             "customers": Customer.objects.all(),
             "colors": Product.Color.choices,
             "kinds": Product.Kind.choices,
@@ -60,7 +66,8 @@ def product_detail(request, pk):
     )
     files = sorted(product.drawing_files.all(), key=lambda f: DRAWING_PRIORITY.index(f.kind))
     current = next((f for f in files if f.kind == request.GET.get("file")), files[0] if files else None)
-    batches = [(b, q) for (p, b), q in batch_balances([product.pk]).items() if q]
+    balances = batch_balances([product.pk])
+    batches = [(b, q) for (p, b), q in balances.items() if q]
     return render(
         request,
         "catalog/product_detail.html",
@@ -74,8 +81,21 @@ def product_detail(request, pk):
             "on_hand": sum(q for _, q in batches),
             "in_transit": in_transit([product.pk]).get(product.pk, 0),
             "batch_left": _batch_rows(batches),
+            "price_rows": pricing.product_prices(product, balances),
+            "sale_prices": _sale_prices(product),
+            "stock_value": pricing.stock_value(balances)[1] if pricing.can_see_costs(request.user) else None,
         },
     )
+
+
+def _sale_prices(product):
+    """Последняя цена продажи изделия каждому заказчику: [(заказчик, дата, цена)]."""
+    last = {}
+    lines = (ShipmentLine.objects.filter(product=product, price_byn__isnull=False)
+             .select_related("shipment__customer").order_by("shipment__date", "pk"))
+    for line in lines:
+        last[line.shipment.customer_id] = (line.shipment.customer, line.shipment.date, line.price_byn)
+    return sorted(last.values(), key=lambda r: r[0].name)
 
 
 def _batch_rows(batches):

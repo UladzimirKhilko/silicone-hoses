@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load stock_tags %}
 {% block title %}{{ product.code }} — Патрубки BSI{% endblock %}
 {% block content %}
 <p><a href="{% url 'catalog:product_list' %}">← Все изделия</a></p>
@@ -55,6 +56,24 @@
     <section class="card">
       <h2>Остаток по партиям</h2>
       <table class="mini">{% for b, q in batch_left %}<tr><td><a href="{% url 'stock:batch_detail' b.pk %}">{{ b }}</a></td><td class="num">{{ q }}</td></tr>{% endfor %}</table>
+    </section>
+    {% endif %}
+
+    {% if price_rows or sale_prices %}
+    <section class="card">
+      <h2>Цены</h2>
+      {% if price_rows %}
+      <table class="mini">
+        <thead><tr><th>Партия</th><th class="num">Завод, CNY</th>{% if can_see_costs %}<th class="num">Учётная, BYN</th>{% endif %}<th class="num">Остаток</th></tr></thead>
+        {% for r in price_rows %}<tr><td><a href="{% url 'stock:batch_detail' r.batch.pk %}">{{ r.batch.short_label }}</a>{% if not r.batch.is_received %} <span class="muted small">в пути</span>{% endif %}</td>
+          <td class="num">{{ r.price_cny|price }}</td>{% if can_see_costs %}<td class="num">{{ r.landed|money }}</td>{% endif %}<td class="num">{{ r.left|default_if_none:"—" }}</td></tr>{% endfor %}
+      </table>
+      {% if can_see_costs and stock_value %}<p class="small">Остаток по учётным ценам: <b>{{ stock_value|money }} BYN</b></p>{% endif %}
+      {% endif %}
+      {% if sale_prices %}
+      <h3 class="small muted">Последняя цена продажи (без НДС)</h3>
+      <table class="mini">{% for c, d, p in sale_prices %}<tr><td>{{ c }}</td><td class="muted small">{{ d|date:"d.m.Y" }}</td><td class="num">{{ p|money }}</td></tr>{% endfor %}</table>
+      {% endif %}
     </section>
     {% endif %}
 

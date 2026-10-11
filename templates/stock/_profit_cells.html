@@ -1,0 +1,3 @@
+{% load stock_tags %}
+<td data-label="Прибыль" class="num{% if t.revenue and t.profit < 0 %} minus{% endif %}">{% if t.revenue %}{% if t.approx %}≈ {% endif %}{{ t.profit|money }}{% else %}—{% endif %}{% if not t.complete %}<div class="muted small">{% if t.qty_no_cost %}без учётной цены {{ t.qty_no_cost }} шт{% endif %}{% if t.qty_no_price %}{% if t.qty_no_cost %}, {% endif %}без цены {{ t.qty_no_price }} шт{% endif %}</div>{% endif %}</td>
+<td data-label="Маржа" class="num">{% if t.margin is not None %}{{ t.margin|pct }}{% else %}—{% endif %}</td>

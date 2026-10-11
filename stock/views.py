@@ -1,4 +1,5 @@
 import datetime as dt
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 import openpyxl
@@ -6,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import F, ProtectedError, Sum
+from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -13,7 +15,7 @@ from django.views.decorators.http import require_POST
 from catalog.models import Customer, Product
 from catalog.views import file_response, search_products
 
-from . import paperwork, receipt_import, services
+from . import paperwork, pricing, receipt_import, services
 from .importers import ParseError, parse_invoice, parse_packing_list, read_rows
 from .forms import (
     AdjustmentForm,
@@ -27,6 +29,36 @@ from .forms import (
     filled,
 )
 from .models import Adjustment, Batch, CartonSpec, ReceiptLine, Shipment, ShipmentLine
+
+
+def costs_required(view):
+    """Учётные цены и прибыль — только руководителю."""
+    def wrapper(request, *args, **kwargs):
+        if not pricing.can_see_costs(request.user):
+            raise PermissionDenied("Учётные цены и прибыль видит только руководитель.")
+        return view(request, *args, **kwargs)
+    wrapper.__name__, wrapper.__doc__ = view.__name__, view.__doc__
+    return login_required(wrapper)
+
+
+def _decimal(raw):
+    raw = (raw or "").replace(",", ".").replace(" ", "").replace("\xa0", "").strip()
+    if not raw:
+        return None
+    try:
+        return Decimal(raw)
+    except InvalidOperation:
+        raise ValueError(f"«{raw}» — не число")
+
+
+def _last_sale_prices(product_ids):
+    """{product_id: цена последней отгрузки (любому заказчику)}."""
+    result = {}
+    rows = (ShipmentLine.objects.filter(product_id__in=product_ids, price_byn__isnull=False)
+            .order_by("shipment__date", "pk").values_list("product_id", "price_byn"))
+    for product_id, price in rows:
+        result[product_id] = price
+    return result
 
 
 # --- Приходы (партии) ---
@@ -51,11 +83,23 @@ def batch_detail(request, pk):
         for r in ShipmentLine.objects.filter(batch=batch).values("product_id").annotate(q=Sum("qty"))
     }
     balances = services.batch_balances([line.product_id for line in lines])
+    lines = list(lines)
+    sale = _last_sale_prices([line.product_id for line in lines])
     for line in lines:
         line.shipped = shipped.get(line.product_id, 0)
         line.left = balances.get((line.product_id, batch.pk), 0)
+        line.amount_cny = line.price_cny * line.qty if line.price_cny is not None else None
+        line.sale_price = sale.get(line.product_id)
+        if line.sale_price is not None and line.landed_price_byn is not None:
+            line.unit_profit = line.sale_price - line.landed_price_byn
+            line.margin = (line.unit_profit / line.sale_price * 100).quantize(Decimal("0.1")) if line.sale_price else None
+    priced = [line.amount_cny for line in lines if line.amount_cny is not None]
+    landed = [line.landed_price_byn * line.qty for line in lines if line.landed_price_byn is not None]
     return render(request, "stock/batch_detail.html", {
         "batch": batch, "lines": lines,
+        "total_cny": sum(priced) if priced else None,
+        "total_landed": sum(landed) if landed else None,
+        "landed_missing": sum(1 for line in lines if line.landed_price_byn is None),
         "receive_form": ReceiveForm(initial={"received_date": dt.date.today()}),
         "cartons": batch.cartons.select_related("product"),
         "carton_form": CartonForm(batch=batch),
@@ -72,6 +116,38 @@ def batch_info(request, pk):
     batch.save()
     messages.success(request, "Данные партии сохранены.")
     return redirect("stock:batch_detail", pk=pk)
+
+
+@costs_required
+@require_POST
+def batch_prices(request, pk):
+    """Учётные цены партии: рассчитать от курса и расходов или ввести вручную. Можно и после приёмки."""
+    batch = get_object_or_404(Batch, pk=pk)
+    lines = list(batch.lines.select_related("product"))
+    try:
+        batch.cny_rate = _decimal(request.POST.get("cny_rate"))
+        batch.extra_costs_byn = _decimal(request.POST.get("extra_costs_byn"))
+        manual = {line.pk: _decimal(request.POST.get(f"landed_{line.pk}")) for line in lines}
+    except ValueError as e:
+        messages.error(request, f"Не сохранено: {e}.")
+        return redirect(f"{batch.get_absolute_url()}#prices")
+    if request.POST.get("action") == "calc":
+        if not batch.cny_rate:
+            messages.error(request, "Для расчёта укажите курс: сколько BYN за 1 CNY.")
+            return redirect(f"{batch.get_absolute_url()}#prices")
+        calculated, k = pricing.calc_landed(lines, batch.cny_rate, batch.extra_costs_byn)
+        manual.update(calculated)
+        no_price = [line.product.code for line in lines if line.pk not in calculated]
+        messages.success(request, f"Учётные цены рассчитаны: курс {batch.cny_rate}, коэффициент расходов {k:.4f}."
+                         + (f" Без цены завода (не рассчитаны): {', '.join(no_price)}." if no_price else ""))
+    else:
+        messages.success(request, "Учётные цены сохранены.")
+    with transaction.atomic():
+        batch.save(update_fields=["cny_rate", "extra_costs_byn"])
+        for line in lines:
+            line.landed_price_byn = pricing.money(manual[line.pk])
+            line.save(update_fields=["landed_price_byn"])
+    return redirect(f"{batch.get_absolute_url()}#prices")
 
 
 @login_required
@@ -217,8 +293,6 @@ def batch_receive(request, pk):
         elif qty < shipped.get(line.product_id, 0):
             errors.append(f"{line.product}: из партии уже отгружено {shipped[line.product_id]} шт.")
         line.qty_received = qty
-        landed = request.POST.get(f"landed_{line.pk}", "").replace(",", ".").strip()
-        line.landed_price_byn = landed or None
     if errors:
         for e in errors:
             messages.error(request, e)
@@ -264,13 +338,27 @@ def _fill_prices(customer, rows):
 
 @login_required
 def shipment_list(request):
-    shipments = Shipment.objects.select_related("customer").annotate(qty=Sum("lines__qty")).order_by("-date", "-created_at")
+    shipments = Shipment.objects.select_related("customer").order_by("-date", "-created_at")
     if request.GET.get("customer"):
         shipments = shipments.filter(customer_id=request.GET["customer"])
     if request.GET.get("month"):
-        y, m = map(int, request.GET["month"].split("-"))
+        try:
+            y, m = map(int, request.GET["month"].split("-"))
+        except ValueError:
+            y, m = dt.date.today().year, dt.date.today().month
         shipments = shipments.filter(date__year=y, date__month=m)
-    return render(request, "stock/shipment_list.html", {"shipments": shipments, "customers": Customer.objects.all(), "filters": request.GET})
+    shipments = list(shipments)
+    lines = ShipmentLine.objects.filter(shipment__in=shipments)
+    lines = pricing.with_costs(lines) if pricing.can_see_costs(request.user) else list(lines)
+    by_shipment = {g.key: g.totals for g in pricing.group_by(lines, lambda line: line.shipment_id, str)}
+    for shipment in shipments:
+        shipment.t = by_shipment.get(shipment.pk, pricing.Totals())
+    return render(request, "stock/shipment_list.html", {
+        "shipments": shipments, "customers": Customer.objects.all(), "filters": request.GET,
+        "total": pricing.totals(lines) if pricing.can_see_costs(request.user) else None,
+        "total_qty": sum(line.qty for line in lines),
+        "total_amount": sum((line.amount or 0) for line in lines),
+    })
 
 
 def _paperwork_warnings(shipment, lines, boxes):
@@ -294,10 +382,13 @@ def _paperwork_warnings(shipment, lines, boxes):
 def shipment_detail(request, pk):
     shipment = get_object_or_404(Shipment.objects.select_related("customer"), pk=pk)
     lines = list(shipment.lines.select_related("product", "batch"))
+    if pricing.can_see_costs(request.user):
+        lines = pricing.with_costs(lines)
     total = sum((line.amount or 0) for line in lines)
     boxes = paperwork.box_plan(sorted(lines, key=lambda line: (line.product.code, line.batch_id)))
     return render(request, "stock/shipment_detail.html", {
         "shipment": shipment, "lines": lines, "total": total, "boxes": boxes,
+        "totals": pricing.totals(lines) if pricing.can_see_costs(request.user) else None,
         "box_total": sum(b.count for b in boxes),
         "paperwork_warnings": _paperwork_warnings(shipment, lines, boxes),
     })
@@ -434,18 +525,106 @@ def adjustment_delete(request, pk):
 def stock_export(request):
     products = list(search_products(request.GET))
     ids = [p.pk for p in products]
-    have, transit = services.on_hand(ids), services.in_transit(ids)
+    balances = services.batch_balances(ids)
+    have, transit = services.on_hand(ids, balances), services.in_transit(ids)
+    costs = pricing.can_see_costs(request.user)
+    value = pricing.stock_value(balances)[0] if costs else {}
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Остатки"
-    ws.append(["Код", "ЯПИБ", "Заказчик", "Тип", "Размеры", "Цвет", "Остаток, шт", "В пути, шт"])
+    ws.append(["Код", "ЯПИБ", "Заказчик", "Тип", "Размеры", "Цвет", "Остаток, шт", "В пути, шт"]
+              + (["Сумма по учётным ценам, BYN"] if costs else []))
     for p in products:
         ws.append([p.code, p.yapib or "", p.customer.name if p.customer_id else "", p.get_kind_display(), p.size_label,
-                   p.get_color_display(), have.get(p.pk, 0), transit.get(p.pk, 0)])
-    for col, width in zip("ABCDEFGH", (28, 10, 14, 16, 26, 10, 12, 12)):
+                   p.get_color_display(), have.get(p.pk, 0), transit.get(p.pk, 0)]
+                  + ([float(pricing.money(value[p.pk])) if p.pk in value else None] if costs else []))
+    for col, width in zip("ABCDEFGHI", (28, 10, 14, 16, 26, 10, 12, 12, 16)):
         ws.column_dimensions[col].width = width
+    return _xlsx_response(wb, f"ostatki-{dt.date.today():%Y-%m-%d}.xlsx")
+
+
+def _xlsx_response(wb, filename):
     buf = BytesIO()
     wb.save(buf)
     resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    resp["Content-Disposition"] = f'attachment; filename="ostatki-{dt.date.today():%Y-%m-%d}.xlsx"'
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+# --- Отчёт «Продажи и прибыль» ---
+
+MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"]
+
+
+def _month_label(d):
+    return f"{MONTHS[d.month - 1]} {d.year}"
+
+
+def _report_period(params):
+    today = dt.date.today()
+    default_from = dt.date(today.year - (1 if today.month < 12 else 0), today.month % 12 + 1, 1)  # 12 месяцев
+    def parse(name, default):
+        try:
+            return dt.date.fromisoformat(params.get(name, ""))
+        except ValueError:
+            return default
+    return parse("date_from", default_from), parse("date_to", today)
+
+
+@costs_required
+def profit_report(request):
+    date_from, date_to = _report_period(request.GET)
+    lines = ShipmentLine.objects.filter(shipment__date__range=(date_from, date_to)).select_related("shipment__customer", "product")
+    customer = request.GET.get("customer", "")
+    if customer.isdigit():
+        lines = lines.filter(shipment__customer_id=customer)
+    lines = pricing.with_costs(lines.order_by("shipment__date", "pk"))
+    by_month = pricing.group_by(lines, lambda line: line.shipment.date.replace(day=1), lambda line: _month_label(line.shipment.date))
+    by_customer = sorted(pricing.group_by(lines, lambda line: line.shipment.customer_id, lambda line: line.shipment.customer.name),
+                         key=lambda g: -g.totals.amount)
+    by_product = sorted(pricing.group_by(lines, lambda line: line.product_id, lambda line: line.product.code),
+                        key=lambda g: -g.totals.amount)
+    if request.GET.get("format") == "xlsx":
+        return _profit_xlsx(date_from, date_to, by_month, by_customer, by_product, lines)
+    return render(request, "stock/profit_report.html", {
+        "date_from": date_from, "date_to": date_to, "customer": customer, "customers": Customer.objects.all(),
+        "total": pricing.totals(lines), "by_month": by_month, "by_customer": by_customer, "by_product": by_product,
+    })
+
+
+def _profit_xlsx(date_from, date_to, by_month, by_customer, by_product, lines):
+    from openpyxl.styles import Font
+
+    head = ["Шт", "Сумма без НДС, BYN", "Себестоимость, BYN", "Прибыль, BYN", "Маржа, %", "Без учётной цены, шт", "Без цены продажи, шт"]
+
+    def row(t):
+        return [t.qty, float(t.amount), float(pricing.money(t.cost)), float(pricing.money(t.profit)),
+                float(t.margin) if t.margin is not None else None, t.qty_no_cost or None, t.qty_no_price or None]
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for title, first, groups in (("По месяцам", "Месяц", by_month), ("По заказчикам", "Заказчик", by_customer), ("По изделиям", "Изделие", by_product)):
+        ws = wb.create_sheet(title)
+        ws.append([f"Продажи и прибыль {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y}"])
+        ws["A1"].font = Font(bold=True)
+        ws.append([first] + head)
+        for g in groups:
+            ws.append([g.label] + row(g.totals))
+        ws.append(["Итого"] + row(pricing.totals(lines)))
+        for cell in ws[ws.max_row]:
+            cell.font = Font(bold=True)
+        ws.column_dimensions["A"].width = 30
+        for col in "BCDEFGH":
+            ws.column_dimensions[col].width = 16
+    ws = wb.create_sheet("Строки отгрузок")
+    ws.append(["Дата", "Заказчик", "ТТН", "Изделие", "Партия", "Шт", "Цена без НДС", "Сумма", "Учётная цена", "≈", "Себестоимость", "Прибыль"])
+    for line in lines:
+        ws.append([line.shipment.date, line.shipment.customer.name, line.shipment.ttn_number, line.product.code, line.batch.short_label,
+                   line.qty, float(line.price_byn) if line.price_byn is not None else None,
+                   float(line.amount) if line.amount is not None else None,
+                   float(line.unit_cost) if line.unit_cost is not None else None, "≈" if line.cost_approx else "",
+                   float(line.cost) if line.cost is not None else None, float(pricing.money(line.profit)) if line.profit is not None else None])
+        ws.cell(ws.max_row, 1).number_format = "DD.MM.YYYY"
+    for col, width in zip("ABCDEFGHIJKL", (11, 14, 10, 26, 12, 7, 12, 12, 12, 4, 13, 12)):
+        ws.column_dimensions[col].width = width
+    return _xlsx_response(wb, f"pribyl-{date_from:%Y-%m-%d}-{date_to:%Y-%m-%d}.xlsx")

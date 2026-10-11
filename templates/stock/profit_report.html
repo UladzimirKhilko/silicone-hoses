@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load stock_tags %}
+{% block title %}Продажи и прибыль — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="head"><h1>Продажи и прибыль</h1>
+  <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=xlsx">В Excel</a></div>
+<form method="get" class="filters">
+  <label class="check-label">с <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}"></label>
+  <label class="check-label">по <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}"></label>
+  <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <button class="btn">Показать</button>
+</form>
+
+<p class="summary">
+  <span class="badge">отгружено {{ total.qty }} шт</span>
+  <span class="badge">сумма без НДС {{ total.amount|money }} BYN</span>
+  <span class="badge">себестоимость {{ total.cost|money }} BYN</span>
+  <span class="badge badge-serial">прибыль {% if total.approx %}≈ {% endif %}{{ total.profit|money }} BYN · {{ total.margin|pct }}</span>
+  {% if total.qty_no_cost %}<span class="badge badge-drawing_pending">без учётной цены {{ total.qty_no_cost }} шт — не в прибыли</span>{% endif %}
+  {% if total.qty_no_price %}<span class="badge badge-sample">без цены продажи {{ total.qty_no_price }} шт</span>{% endif %}
+</p>
+<p class="muted small">Прибыль = сумма без НДС − учётная цена партии × кол-во. «≈» — у части партий нет своей учётной цены, взята последняя известная по изделию. Учётные цены задаются в карточке партии.</p>
+
+<div class="report-grid">
+{% include "stock/_profit_table.html" with title="По месяцам" first="Месяц" groups=by_month %}
+{% include "stock/_profit_table.html" with title="По заказчикам" first="Заказчик" groups=by_customer %}
+{% include "stock/_profit_table.html" with title="По изделиям" first="Изделие" groups=by_product %}
+</div>
+{% endblock %}

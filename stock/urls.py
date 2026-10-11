@@ -14,6 +14,7 @@ urlpatterns = [
     path("batches/<int:pk>/receive/", views.batch_receive, name="batch_receive"),
     path("batches/<int:pk>/delete/", views.batch_delete, name="batch_delete"),
     path("batches/<int:pk>/info/", views.batch_info, name="batch_info"),
+    path("batches/<int:pk>/prices/", views.batch_prices, name="batch_prices"),
     path("batches/<int:pk>/cartons/", views.carton_add, name="carton_add"),
     path("batches/<int:pk>/cartons/<int:carton_pk>/delete/", views.carton_delete, name="carton_delete"),
     path("shipments/", views.shipment_list, name="shipment_list"),
@@ -29,4 +30,5 @@ urlpatterns = [
     path("adjustments/<int:pk>/", views.adjustment_detail, name="adjustment_detail"),
     path("adjustments/<int:pk>/delete/", views.adjustment_delete, name="adjustment_delete"),
     path("export/stock.xlsx", views.stock_export, name="stock_export"),
+    path("reports/profit/", views.profit_report, name="profit_report"),
 ]

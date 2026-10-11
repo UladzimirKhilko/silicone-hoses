@@ -1,0 +1,13 @@
+{% load stock_tags %}
+<section class="card">
+  <h2>{{ title }}</h2>
+  <div class="table-wrap"><table class="mini">
+    <thead><tr><th>{{ first }}</th><th class="num">Шт</th><th class="num">Сумма без НДС</th><th class="num">Себестоимость</th><th class="num">Прибыль</th><th class="num">Маржа</th></tr></thead>
+    <tbody>
+    {% for g in groups %}
+      <tr><td>{{ g.label }}</td><td class="num">{{ g.totals.qty }}</td><td class="num">{{ g.totals.amount|money }}</td><td class="num">{{ g.totals.cost|money }}</td>
+        {% include "stock/_profit_cells.html" with t=g.totals %}</tr>
+    {% empty %}<tr><td colspan="6" class="muted">Отгрузок за период нет.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>

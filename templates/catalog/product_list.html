@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load stock_tags %}
 {% block content %}
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ filters.q }}" placeholder="Поиск: 90-38, D60, 24.1155, красный, МТЗ…" autofocus>
@@ -13,7 +14,7 @@
 
 <form method="get" action="{% url 'catalog:drawings_archive' %}" id="archive">
   <div class="toolbar">
-    <span class="muted">Найдено: {{ products|length }}</span>
+    <span class="muted">Найдено: {{ products|length }} · на складе {{ total_on_hand }} шт{% if can_see_costs and stock_value is not None %} · по учётным ценам <b>{{ stock_value|money }} BYN</b>{% if stock_value_missing %} <span title="Остаток без учётной цены — не вошёл в сумму">(без цены {{ stock_value_missing }} шт)</span>{% endif %}{% endif %}</span>
     <span class="spacer"></span>
     <select name="kind">{% for v,l in drawing_kinds %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
     <button class="btn" title="Отметьте изделия галочками">Скачать чертежи (ZIP)</button>

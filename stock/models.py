@@ -25,18 +25,28 @@ class Batch(models.Model):
     manufactured = models.CharField("Дата изготовления", max_length=20, blank=True, help_text="Например 07.2025")
     passport_number = models.CharField("Номер паспорта", max_length=30, blank=True, help_text="Например 09/002/25")
     notes = models.TextField("Примечание", blank=True)
+    # Основа для расчёта учётной цены (необязательно — цену можно ввести вручную по строкам)
+    cny_rate = models.DecimalField("Курс, BYN за 1 CNY", max_digits=10, decimal_places=4, null=True, blank=True)
+    extra_costs_byn = models.DecimalField("Расходы на партию, BYN", max_digits=12, decimal_places=2, null=True, blank=True,
+                                          help_text="Доставка, таможня, банк и т. п. — распределяются пропорционально стоимости")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-received_date", "-created_at"]
         verbose_name = "партия"
         verbose_name_plural = "партии"
+        permissions = [("view_costs", "Видит учётные цены, себестоимость и прибыль")]
 
     def __str__(self):
         bits = [f"№ {self.number}" if self.number else "", self.invoice]
         if self.received_date:
             bits.append(self.received_date.strftime("%d.%m.%Y"))
         return "Партия " + " · ".join(b for b in bits if b) if any(bits) else f"Партия #{self.pk}"
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("stock:batch_detail", args=[self.pk])
 
     @property
     def short_label(self):
@@ -57,11 +67,15 @@ class ReceiptLine(models.Model):
     qty_expected = models.PositiveIntegerField("По документам, шт")
     qty_received = models.PositiveIntegerField("Принято, шт", null=True, blank=True)
     price_cny = models.DecimalField("Цена Китая, CNY", max_digits=16, decimal_places=10, null=True, blank=True)
-    landed_price_byn = models.DecimalField("Приходная цена, BYN/шт", max_digits=10, decimal_places=2, null=True, blank=True)
+    landed_price_byn = models.DecimalField("Учётная цена, BYN/шт", max_digits=10, decimal_places=2, null=True, blank=True)
 
     class Meta:
         ordering = ["product__code"]
         constraints = [models.UniqueConstraint(fields=["batch", "product"], name="one_line_per_product_in_batch")]
+
+    @property
+    def qty(self):
+        return self.qty_received if self.qty_received is not None else self.qty_expected
 
     @property
     def shortage(self):

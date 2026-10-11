@@ -19,6 +19,7 @@
   </div>
 </div>
 {% if batch.notes %}<p class="note">{{ batch.notes|linebreaksbr }}</p>{% endif %}
+{% if total_cny %}<p class="summary"><span class="badge">по заводу: {{ total_cny|money }} CNY</span>{% if can_see_costs and total_landed %}<span class="badge">по учётным ценам: {{ total_landed|money }} BYN</span>{% endif %}{% if can_see_costs and landed_missing %}<a class="badge badge-drawing_pending" href="#prices">без учётной цены: {{ landed_missing }}</a>{% endif %}</p>{% endif %}
 
 <form method="post" action="{% url 'stock:batch_info' batch.pk %}" class="card batch-info">{% csrf_token %}
   <h2>Для паспорта и бирок</h2>
@@ -31,7 +32,7 @@
 <form method="post" action="{% url 'stock:batch_receive' batch.pk %}">{% csrf_token %}
 <div class="table-wrap">
 <table class="products">
-  <thead><tr><th>Изделие</th><th class="num">По документам</th><th class="num">Принято</th><th class="num">Отгружено</th><th class="num">Осталось</th><th class="num">Цена Китая, CNY</th><th class="num">Приходная, BYN</th></tr></thead>
+  <thead><tr><th>Изделие</th><th class="num">По документам</th><th class="num">Принято</th><th class="num">Отгружено</th><th class="num">Осталось</th><th class="num">Цена завода, CNY</th>{% if can_see_costs %}<th class="num">Учётная, BYN</th>{% endif %}</tr></thead>
   <tbody>
   {% for l in lines %}
     <tr>
@@ -43,8 +44,8 @@
       </td>
       <td data-label="Отгружено" class="num">{{ l.shipped }}</td>
       <td data-label="Осталось" class="num strong">{{ l.left }}</td>
-      <td data-label="Цена Китая" class="num">{{ l.price_cny|floatformat:2|default:"—" }}</td>
-      <td data-label="Приходная" class="num">{% if batch.is_received %}{{ l.landed_price_byn|default:"—" }}{% else %}<input name="landed_{{ l.pk }}" value="{{ l.landed_price_byn|default:'' }}" class="qty" inputmode="decimal">{% endif %}</td>
+      <td data-label="Цена завода" class="num">{{ l.price_cny|price }}</td>
+      {% if can_see_costs %}<td data-label="Учётная" class="num">{{ l.landed_price_byn|money }}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>
@@ -59,6 +60,30 @@
   </div>
 {% endif %}
 </form>
+
+{% if can_see_costs %}
+<form method="post" action="{% url 'stock:batch_prices' batch.pk %}" class="card prices" id="prices">{% csrf_token %}
+  <h2>Учётные цены <span class="muted small">— видит только руководитель</span></h2>
+  <p class="muted small">Учётная цена = цена завода × курс × коэффициент расходов. Расходы на партию (доставка, таможня, банк) делятся пропорционально стоимости строк. Цену любой строки можно поправить вручную. Менять можно и после приёмки — прибыль по отгрузкам пересчитается.</p>
+  <div class="batch-info">
+    <label>Курс, BYN за 1 CNY <input name="cny_rate" value="{{ batch.cny_rate|default_if_none:'' }}" inputmode="decimal" placeholder="0,4512"></label>
+    <label>Расходы на партию, BYN <input name="extra_costs_byn" value="{{ batch.extra_costs_byn|default_if_none:'' }}" inputmode="decimal" placeholder="12 500"></label>
+    <button class="btn" name="action" value="calc" onclick="return ![...document.querySelectorAll('.prices input[name^=landed_]')].some(i => i.value) || confirm('Пересчитать все учётные цены партии? Введённые вручную будут заменены.')">Рассчитать от курса</button>
+  </div>
+  <div class="table-wrap"><table class="mini">
+    <thead><tr><th>Изделие</th><th class="num">Шт</th><th class="num">Цена завода, CNY</th><th class="num">Сумма, CNY</th><th class="num">Учётная, BYN/шт</th><th class="num">Последняя цена продажи</th><th class="num">Прибыль со шт</th></tr></thead>
+    <tbody>
+    {% for l in lines %}
+      <tr><td>{{ l.product.code }}</td><td class="num">{{ l.qty }}</td><td class="num">{{ l.price_cny|price }}</td><td class="num">{{ l.amount_cny|money }}</td>
+        <td class="num"><input name="landed_{{ l.pk }}" value="{{ l.landed_price_byn|default_if_none:'' }}" class="qty" inputmode="decimal"></td>
+        <td class="num">{{ l.sale_price|money }}</td>
+        <td class="num{% if l.unit_profit < 0 %} minus{% endif %}">{% if l.unit_profit is not None %}{{ l.unit_profit|money }} <span class="muted small">{{ l.margin|pct }}</span>{% else %}—{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <button class="btn primary" name="action" value="save">Сохранить цены</button>
+</form>
+{% endif %}
 
 <section class="card cartons">
   <h2>Коробки (из упаковочного листа завода)</h2>

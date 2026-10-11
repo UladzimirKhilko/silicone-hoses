@@ -84,11 +84,10 @@ def test_movements_running_balance(product, mtz):
 def test_receive_with_shortage(client_in, product):
     batch = Batch.objects.create(invoice="TS1")
     line = ReceiptLine.objects.create(batch=batch, product=product, qty_expected=100)
-    client_in.post(reverse("stock:batch_receive", args=[batch.pk]), {"received_date": "2025-09-18", f"received_{line.pk}": "97", f"landed_{line.pk}": "3,47"})
+    client_in.post(reverse("stock:batch_receive", args=[batch.pk]), {"received_date": "2025-09-18", f"received_{line.pk}": "97"})
     batch.refresh_from_db()
     line.refresh_from_db()
     assert batch.is_received and line.qty_received == 97 and line.shortage == 3
-    assert line.landed_price_byn == Decimal("3.47")
     assert services.on_hand()[product.pk] == 97
 
 

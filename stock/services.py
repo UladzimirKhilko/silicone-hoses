@@ -37,10 +37,10 @@ def batch_balances(product_ids=None):
     return bal
 
 
-def on_hand(product_ids=None):
+def on_hand(product_ids=None, balances=None):
     """{product_id: остаток на складе}."""
     totals = defaultdict(int)
-    for (product_id, _), qty in batch_balances(product_ids).items():
+    for (product_id, _), qty in (balances if balances is not None else batch_balances(product_ids)).items():
         totals[product_id] += qty
     return totals
 
