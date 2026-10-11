@@ -428,3 +428,20 @@ def test_import_rejects_garbage_file(client_in):
 
     resp = client_in.post(reverse("stock:batch_import"), {"invoice": SimpleUploadedFile("x.xlsx", b"not excel")}, follow=True)
     assert "Не удалось прочитать файл" in resp.content.decode()
+
+
+def test_import_replaces_in_transit_order(client_in, import_catalog):
+    p75, reducer, d63 = import_catalog
+    order = Batch.objects.create(factory_orders="Q700", notes="Заказ в Китай")
+    ReceiptLine.objects.create(batch=order, product=p75, qty_expected=255)
+    client_in.post(reverse("stock:batch_import"), {"invoice": _xlsx(INVOICE_ROWS), "packing_list": _xlsx(PL_ROWS)})
+    ctx = client_in.get(reverse("stock:batch_import_preview")).context
+    assert list(ctx["orders"]) == [order]
+    unmatched = next(r for r in ctx["rows"] if not r.product_id)
+    client_in.post(reverse("stock:batch_import_preview"), {
+        "invoice": "TS9000001", "number": "", "manufactured": "", "passport_number": "", "factory_orders": "", "notes": "",
+        f"product_{unmatched.key}": reducer.pk, "target": order.pk,
+    })
+    order.refresh_from_db()
+    assert Batch.objects.count() == 1 and order.invoice == "TS9000001" and order.factory_orders == "Q700"
+    assert services.in_transit()[p75.pk] == 200 and order.lines.count() == 3

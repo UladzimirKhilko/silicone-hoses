@@ -48,6 +48,7 @@
         <dt>Цвет</dt><dd>{% if product.color %}<span class="dot dot-{{ product.color }}"></span>{{ product.get_color_display }}{% else %}—{% endif %}</dd>
         <dt>Остаток</dt><dd class="strong">{{ on_hand }} шт</dd>
         {% if in_transit %}<dt>В пути</dt><dd>{{ in_transit }} шт</dd>{% endif %}
+        {% if reserved %}<dt>Резерв</dt><dd>{{ reserved }} шт <span class="muted small">под заявки · свободно {{ free }}</span></dd>{% endif %}
       </dl>
       {% if product.notes %}<p class="note">{{ product.notes|linebreaksbr }}</p>{% endif %}
     </section>
@@ -59,7 +60,7 @@
     </section>
     {% endif %}
 
-    {% if price_rows or sale_prices %}
+    {% if price_rows or sale_prices or spec_prices %}
     <section class="card">
       <h2>Цены</h2>
       {% if price_rows %}
@@ -69,6 +70,11 @@
           <td class="num">{{ r.price_cny|price }}</td>{% if can_see_costs %}<td class="num">{{ r.landed|money }}</td>{% endif %}<td class="num">{{ r.left|default_if_none:"—" }}</td></tr>{% endfor %}
       </table>
       {% if can_see_costs and stock_value %}<p class="small">Остаток по учётным ценам: <b>{{ stock_value|money }} BYN</b></p>{% endif %}
+      {% endif %}
+      {% if spec_prices %}
+      <h3 class="small muted">По спецификациям (без НДС)</h3>
+      <table class="mini">{% for l in spec_prices %}<tr class="{% if not l.active %}muted{% endif %}"><td><a href="{{ l.spec.get_absolute_url }}">{{ l.spec.contract.customer }} № {{ l.spec.number }}</a> <span class="small">{{ l.spec.date|date:"d.m.y" }}</span></td>
+        <td class="num">{{ l.price_byn|money }}</td><td class="num small">{% if l.left is not None %}ост. {{ l.left }}{% endif %}</td></tr>{% endfor %}</table>
       {% endif %}
       {% if sale_prices %}
       <h3 class="small muted">Последняя цена продажи (без НДС)</h3>

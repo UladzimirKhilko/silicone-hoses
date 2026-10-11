@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Заказ в Китай — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'sales:request_list' %}">← Заявки</a></p>
+<h1>Заказ в Китай</h1>
+<p class="muted">Чего не хватает под открытые заявки: нужно по заявкам − на складе − в пути. Предложено с округлением до целой коробки (по упаковочному листу последней поставки). Количество можно поправить, изделия — добавить.</p>
+{% if text %}
+<section class="card wechat">
+  <div class="head"><h2>Текст для WeChat</h2><button type="button" class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById('wechat').value).then(()=>this.textContent='Скопировано ✓')">Скопировать</button></div>
+  <textarea id="wechat" rows="{{ text.splitlines|length|add:1 }}" readonly>{{ text }}</textarea>
+</section>
+{% endif %}
+<form method="post" class="card form china-form">{% csrf_token %}
+  <div class="table-wrap">
+  <table class="products">
+    <thead><tr><th></th><th>Изделие</th><th class="num">Нужно по заявкам</th><th class="num">На складе</th><th class="num">В пути</th><th class="num">Не хватает</th><th class="num">В коробке</th><th class="num">Заказать</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><input type="checkbox" name="use_{{ r.product.pk }}" value="1" {% if r.use %}checked{% endif %} aria-label="Заказать"></td>
+        <td class="code"><a href="{{ r.product.get_absolute_url }}">{{ r.product.code }}</a> <span class="muted small">{{ r.product.customer|default:"" }}</span>
+          <div class="muted small">{% for req, q in r.requests %}<a href="{{ req.get_absolute_url }}">{{ req.customer }} {{ req.date|date:"d.m" }}</a>: {{ q }}{% if not forloop.last %}; {% endif %}{% endfor %}</div></td>
+        <td data-label="Нужно" class="num">{{ r.demand }}</td>
+        <td data-label="На складе" class="num">{{ r.on_hand }}</td>
+        <td data-label="В пути" class="num">{{ r.in_transit|default:"—" }}</td>
+        <td data-label="Не хватает" class="num minus strong">{{ r.short }}</td>
+        <td data-label="В коробке" class="num">{{ r.carton|default:"—" }}</td>
+        <td data-label="Заказать" class="num"><input type="number" min="0" name="qty_{{ r.product.pk }}" value="{{ r.qty }}" class="qty"></td>
+      </tr>
+    {% empty %}<tr><td colspan="8" class="empty">Под открытые заявки всего хватает (с учётом товара в пути). Добавьте изделия ниже, если нужно заказать про запас.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <h2>Добавить изделия</h2>
+  {% with formset=extra %}{% include "stock/_lines.html" with lines_note="Например, про запас или образцы." %}{% endwith %}
+  <div class="actions">
+    <button class="btn primary" name="action" value="text">Текст для WeChat</button>
+    <button class="btn" name="action" value="zip">Чертежи для завода (ZIP)</button>
+    <input name="factory_orders" placeholder="№ заказа завода (необязательно)">
+    <button class="btn" name="action" value="batch" onclick="return confirm('Сохранить заказ как поставку «в пути»?')">Отправил — сохранить как «в пути»</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load stock_tags %}
+{% block title %}{{ spec }} — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{{ spec.contract.get_absolute_url }}">← {{ spec.contract }}</a></p>
+<div class="head">
+  <div>
+    <h1>{{ spec }}</h1>
+    <p class="muted">{{ spec.customer }} · {{ spec.contract }} ·
+      {% if active %}<span class="badge badge-serial">действует</span>{% else %}<span class="badge">{% if spec.closed %}закрыта{% else %}не действует{% endif %}</span>{% endif %}
+      {% if spec.valid_until %} до {{ spec.valid_until|date:"d.m.Y" }}{% endif %}</p>
+  </div>
+  <div class="actions">
+    {% if spec.file %}<a class="btn" href="{% url 'sales:spec_file' spec.pk %}" target="_blank">Скан</a>{% endif %}
+    <a class="btn" href="{% url 'sales:spec_edit' spec.pk %}">Изменить</a>
+    <a class="btn" href="{% url 'sales:spec_create' spec.contract.pk %}?copy={{ spec.pk }}" title="Новая спецификация с теми же изделиями и ценами">Копировать в новую</a>
+    <form method="post" action="{% url 'sales:spec_toggle_closed' spec.pk %}" class="inline">{% csrf_token %}<button class="btn ghost">{% if spec.closed %}Открыть снова{% else %}Закрыть{% endif %}</button></form>
+    <form method="post" action="{% url 'sales:spec_delete' spec.pk %}" class="inline" onsubmit="return confirm('Удалить спецификацию?')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
+  </div>
+</div>
+{% if spec.notes %}<p class="note">{{ spec.notes|linebreaksbr }}</p>{% endif %}
+{% if unlinked %}
+<form method="post" action="{% url 'sales:spec_link_past' spec.pk %}" class="msg msg-warning">{% csrf_token %}
+  Есть отгрузки {{ spec.customer }} этих изделий с {{ spec.date|date:"d.m.Y" }} без спецификации ({{ unlinked }} строк) — например, перенесённые из Excel.
+  <button class="btn small">Привязать к этой спецификации</button>
+</form>
+{% endif %}
+<div class="table-wrap">
+<table class="products">
+  <thead><tr><th>Изделие</th><th class="num">Цена без НДС</th><th class="num">Лимит</th><th class="num">Отгружено</th><th class="num">Осталось по лимиту</th><th class="num">На складе</th></tr></thead>
+  <tbody>
+  {% for l in rows %}
+    <tr class="{% if l.left is not None and l.left <= 0 %}row-warn{% elif l.left is not None and l.on_hand < l.left %}row-attention{% endif %}">
+      <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a> <span class="muted small">{{ l.product.yapib }}</span></td>
+      <td data-label="Цена" class="num">{{ l.price_byn|money }}</td>
+      <td data-label="Лимит" class="num">{{ l.qty_limit|default:"—" }}</td>
+      <td data-label="Отгружено" class="num">{{ l.shipped }}{% if l.percent is not None %} <span class="muted small">{{ l.percent }} %</span>{% endif %}</td>
+      <td data-label="Осталось" class="num strong">{% if l.left is None %}—{% elif l.left < 0 %}<span class="minus">превышен на {{ l.left|stringformat:"d"|cut:"-" }}</span>{% elif l.left == 0 %}<span class="minus">закончился</span>{% else %}{{ l.left }}{% endif %}</td>
+      <td data-label="На складе" class="num">{{ l.on_hand }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="empty">Строк нет.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small">Оранжевым — на складе меньше, чем осталось по лимиту; красным — лимит выбран.</p>
+{% if others %}<p class="small">Другие спецификации {{ spec.customer }}: {% for o in others %}<a href="{{ o.get_absolute_url }}">{{ o }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+{% endblock %}

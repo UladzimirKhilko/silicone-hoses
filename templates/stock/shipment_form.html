@@ -2,7 +2,8 @@
 {% block title %}Новая отгрузка — Патрубки BSI{% endblock %}
 {% block content %}
 <p><a href="{% url 'stock:shipment_list' %}">← Отгрузки</a></p>
-<h1>Новая отгрузка</h1>
+<h1>Новая отгрузка{% if req %} по заявке{% endif %}</h1>
+{% if req %}<p class="muted">{{ req }} — подставлен невыполненный остаток (сколько есть на складе). <a href="{{ req.get_absolute_url }}">К заявке</a></p>{% endif %}
 <form method="post" enctype="multipart/form-data" class="card form">{% csrf_token %}
   <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{{ f.errors }}</p>{% endfor %}</div>
   <h2>Изделия</h2>

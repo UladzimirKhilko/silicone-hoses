@@ -23,6 +23,7 @@
 | [docs/12-ready-solutions.md](docs/12-ready-solutions.md) | Готовые решения (1С, МойСклад, InvenTree) vs своя разработка |
 | [docs/13-interview.md](docs/13-interview.md) | Итоги интервью: пользователи, склад, приход, отгрузки, чертежи, заявки, отчёты |
 | [docs/14-amkador-belaz.md](docs/14-amkador-belaz.md) | Чертежи Амкадора (BSI, завода, заказчика) и БелАЗа; расхождения |
+| [docs/15-prices-sales.md](docs/15-prices-sales.md) | Цены (завода, учётная, продажи), прибыль, договоры и спецификации, заявки, заказ в Китай |
 | [docs/glossary.md](docs/glossary.md) | Глоссарий терминов |
 
 ## Папка `samples/`

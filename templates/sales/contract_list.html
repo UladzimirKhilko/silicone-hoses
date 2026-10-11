@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Договоры — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="head"><h1>Договоры и спецификации</h1><a class="btn primary" href="{% url 'sales:contract_create' %}">+ Договор</a></div>
+<p class="muted small">Спецификация задаёт цену продажи без НДС и лимит по количеству. При отгрузке цена подставляется из самой новой действующей спецификации заказчика, а отгрузка уменьшает остаток лимита.</p>
+{% for customer, contracts in customers %}
+<section class="card contract-block">
+  <h2>{{ customer.name }}</h2>
+  {% for c in contracts %}
+  <div class="contract">
+    <div class="head"><a href="{{ c.get_absolute_url }}"><b>{{ c }}</b></a>{% if c.valid_until %}<span class="muted small">до {{ c.valid_until|date:"d.m.Y" }}</span>{% endif %}
+      <a class="btn small" href="{% url 'sales:spec_create' c.pk %}">+ Спецификация</a></div>
+    <div class="table-wrap"><table class="mini">
+      {% for s in c.specifications.all %}
+      <tr><td><a href="{{ s.get_absolute_url }}">{{ s }}</a></td>
+        <td>{% if s.active %}<span class="badge badge-serial">действует</span>{% else %}<span class="badge">{% if s.closed %}закрыта{% else %}не действует{% endif %}</span>{% endif %}</td>
+        <td class="num">{{ s.positions }} поз.</td>
+        <td class="num">{% if s.limit_total %}{{ s.shipped_total }} из {{ s.limit_total }} шт · {{ s.percent }} %{% else %}без лимита{% endif %}</td></tr>
+      {% empty %}<tr><td class="muted">Спецификаций нет.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+  {% endfor %}
+</section>
+{% empty %}<p class="empty">Договоров пока нет. Добавьте договор заказчика, затем спецификацию с ценами.</p>{% endfor %}
+{% endblock %}

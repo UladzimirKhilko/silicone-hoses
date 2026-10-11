@@ -107,7 +107,8 @@ def post_shipment(shipment, lines):
     balances = batch_balances([line["product"].pk for line in lines])
     for line in _spread(lines, balances):
         ShipmentLine.objects.create(
-            shipment=shipment, product=line["product"], batch=line["batch"], qty=line["qty"], price_byn=line.get("price_byn")
+            shipment=shipment, product=line["product"], batch=line["batch"], qty=line["qty"], price_byn=line.get("price_byn"),
+            spec_line=line.get("spec_line"),
         )
 
 

@@ -4,7 +4,9 @@
 {% block content %}
 <p><a href="{% url 'stock:shipment_list' %}">← Отгрузки</a></p>
 <div class="head">
-  <div><h1>{{ shipment }}</h1>{% if shipment.notes %}<p class="muted">{{ shipment.notes }}</p>{% endif %}</div>
+  <div><h1>{{ shipment }}</h1>
+    {% if shipment.request %}<p class="muted">По заявке: <a href="{{ shipment.request.get_absolute_url }}">{{ shipment.request }}</a></p>{% endif %}
+    {% if shipment.notes %}<p class="muted">{{ shipment.notes }}</p>{% endif %}</div>
   <form method="post" action="{% url 'stock:shipment_delete' shipment.pk %}" class="inline" onsubmit="return confirm('Удалить отгрузку? Товар вернётся в остаток.')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
 </div>
 <div class="table-wrap">
@@ -17,7 +19,7 @@
       <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a></td>
       <td data-label="Партия"><a href="{% url 'stock:batch_detail' l.batch_id %}">{{ l.batch.short_label }}</a></td>
       <td data-label="Кол-во" class="num">{{ l.qty }}</td>
-      <td data-label="Цена" class="num">{{ l.price_byn|money }}</td>
+      <td data-label="Цена" class="num">{{ l.price_byn|money }}{% if l.spec_line %}<div class="muted small"><a href="{{ l.spec_line.spec.get_absolute_url }}" title="{{ l.spec_line.spec }}">спец. № {{ l.spec_line.spec.number }}</a></div>{% endif %}</td>
       <td data-label="Сумма" class="num">{{ l.amount|money }}</td>
       {% if can_see_costs %}
       <td data-label="Учётная" class="num">{% if l.unit_cost is None %}<span class="minus">нет</span>{% else %}{% if l.cost_approx %}<span title="У партии нет своей учётной цены — взята последняя известная по изделию">≈ </span>{% endif %}{{ l.unit_cost|money }}{% endif %}</td>

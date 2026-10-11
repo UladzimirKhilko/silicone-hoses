@@ -158,8 +158,9 @@ def draft_warnings(draft, rows=None):
 
 
 @transaction.atomic
-def create_batch(draft, choices, header, remember=True, user=None):
+def create_batch(draft, choices, header, remember=True, user=None, target=None):
     """choices: {row.key: product_id} для строк, где изделие выбрал человек.
+    target — поставка «в пути» (заказ в Китай), которую заменяет пришедший инвойс.
     Возвращает партию «в пути»."""
     rows = rows_from(draft)
     merged = {}
@@ -177,7 +178,19 @@ def create_batch(draft, choices, header, remember=True, user=None):
         m["cartons"] += r.cartons
         m["names"] += [(r.invoice_name, ProductAlias.Source.INVOICE), (r.pl_name, ProductAlias.Source.PACKING_LIST),
                        (r.pl_mark, ProductAlias.Source.CARTON)]
-    batch = Batch.objects.create(status=Batch.Status.IN_TRANSIT, **header)
+    if target is not None:
+        if target.status != Batch.Status.IN_TRANSIT:
+            raise ValueError("Поставка уже принята — заменить её состав нельзя.")
+        header = {**header, "notes": "\n".join(n for n in (target.notes, header.get("notes", "")) if n),
+                  "factory_orders": header.get("factory_orders") or target.factory_orders}
+        for field, value in header.items():
+            setattr(target, field, value)
+        target.save()
+        target.lines.all().delete()
+        target.cartons.all().delete()
+        batch = target
+    else:
+        batch = Batch.objects.create(status=Batch.Status.IN_TRANSIT, **header)
     products = Product.objects.in_bulk(merged)
     for product_id, m in merged.items():
         product = products[product_id]

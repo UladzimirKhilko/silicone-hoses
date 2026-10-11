@@ -42,6 +42,7 @@ input, select, textarea { font: inherit; padding: 7px 9px; border: 1px solid var
 
 .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; background: var(--ok); }
 .msg-error { background: var(--err); }
+.msg-warning { background: #fff4e5; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .filters input[type=search] { flex: 1 1 280px; }
@@ -155,3 +156,12 @@ tr.row-warn td { background: #fdecea; }
 .stock-value { margin: 0 0 12px; }
 .report-grid { display: grid; gap: 16px; }
 .report-grid .card h2 { margin-bottom: 6px; }
+.contract-block { margin-bottom: 16px; }
+.contract { margin-top: 10px; }
+.contract .head { align-items: center; margin-bottom: 4px; justify-content: flex-start; }
+.paste { margin: 12px 0; }
+.paste textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 13px; margin: 6px 0; }
+.msg-warning .btn { margin-left: 8px; }
+.wechat { margin-bottom: 16px; }
+.wechat textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.china-form .actions { margin-top: 12px; align-items: center; }

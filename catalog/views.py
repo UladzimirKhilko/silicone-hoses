@@ -1,3 +1,4 @@
+import datetime as dt
 import io
 import zipfile
 from urllib.parse import quote
@@ -10,6 +11,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .forms import AliasForm, DrawingUploadForm, ProductForm
+from sales import services as sales_services
 from stock import pricing
 from stock.models import Batch, ShipmentLine
 from stock.services import batch_balances, in_transit, movements, on_hand
@@ -68,6 +70,7 @@ def product_detail(request, pk):
     current = next((f for f in files if f.kind == request.GET.get("file")), files[0] if files else None)
     balances = batch_balances([product.pk])
     batches = [(b, q) for (p, b), q in balances.items() if q]
+    reserved = sales_services.reserved([product.pk]).get(product.pk, 0)
     return render(
         request,
         "catalog/product_detail.html",
@@ -83,9 +86,23 @@ def product_detail(request, pk):
             "batch_left": _batch_rows(batches),
             "price_rows": pricing.product_prices(product, balances),
             "sale_prices": _sale_prices(product),
+            "spec_prices": _spec_prices(product),
+            "reserved": reserved,
+            "free": max(sum(q for _, q in batches) - reserved, 0),
             "stock_value": pricing.stock_value(balances)[1] if pricing.can_see_costs(request.user) else None,
         },
     )
+
+
+def _spec_prices(product):
+    """Цены в спецификациях (новые первыми) с остатком лимита."""
+    lines = list(product.spec_lines.select_related("spec__contract__customer").order_by("-spec__date"))
+    used = sales_services.spec_usage([line.pk for line in lines])
+    today = dt.date.today()
+    for line in lines:
+        line.left = line.qty_limit - used.get(line.pk, 0) if line.qty_limit is not None else None
+        line.active = line.spec.is_active(today)
+    return lines
 
 
 def _sale_prices(product):

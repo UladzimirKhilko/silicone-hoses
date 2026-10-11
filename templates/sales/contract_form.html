@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Договор — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% if contract %}{{ contract.get_absolute_url }}{% else %}{% url 'sales:contract_list' %}{% endif %}">← Назад</a></p>
+<h1>{% if contract %}Изменить {{ contract }}{% else %}Новый договор{% endif %}</h1>
+<form method="post" enctype="multipart/form-data" class="card form">{% csrf_token %}
+  <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}</div>
+  <button class="btn primary">Сохранить</button>
+</form>
+{% endblock %}

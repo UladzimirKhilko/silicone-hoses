@@ -62,18 +62,40 @@ class ReceiveForm(forms.Form):
 
 class ShipmentForm(forms.ModelForm):
     customer = forms.ModelChoiceField(Customer.objects.all(), label="Заказчик")
+    specification = forms.ModelChoiceField(
+        None, label="Спецификация", required=False, empty_label="подобрать автоматически",
+        help_text="Цена и лимит — из самой новой действующей спецификации заказчика, где есть изделие",
+    )
 
     class Meta:
         model = Shipment
-        fields = ["customer", "date", "ttn_number", "ttn_scan", "notes"]
+        fields = ["customer", "date", "request", "specification", "ttn_number", "ttn_scan", "notes"]
         widgets = {"date": DateInput(), "notes": forms.Textarea(attrs={"rows": 2})}
+
+    def __init__(self, *args, **kwargs):
+        from sales.models import CustomerRequest, Specification
+
+        super().__init__(*args, **kwargs)
+        self.fields["specification"].queryset = Specification.objects.select_related("contract__customer").filter(closed=False)
+        self.fields["specification"].label_from_instance = lambda s: f"{s.contract.customer} · {s}"
+        self.fields["request"].queryset = CustomerRequest.objects.select_related("customer").filter(status=CustomerRequest.Status.OPEN)
+        self.fields["request"].empty_label = "без заявки"
+
+    def clean(self):
+        data = super().clean()
+        customer = data.get("customer")
+        for field in ("specification", "request"):
+            obj = data.get(field)
+            if obj and customer and obj.customer != customer:
+                self.add_error(field, f"Это {obj} другого заказчика ({obj.customer}).")
+        return data
 
 
 class ShipmentLineForm(forms.Form):
     product = ProductField(required=False)
     qty = forms.IntegerField(label="Кол-во", min_value=1, required=False)
     price_byn = forms.DecimalField(label="Цена без НДС", required=False, max_digits=10, decimal_places=2, localize=True,
-                                   help_text="пусто — как в прошлой отгрузке этому заказчику")
+                                   help_text="пусто — по спецификации, иначе как в прошлой отгрузке")
     batch = BatchField()
 
     def clean(self):

@@ -250,9 +250,12 @@ def batch_import_preview(request):
         if missing:
             messages.error(request, f"Выберите изделие для строк: {', '.join(r.invoice_name or r.pl_name for r in missing)}.")
         else:
-            batch = receipt_import.create_batch(draft, choices, header, remember=bool(request.POST.get("remember")), user=request.user)
+            target = Batch.objects.filter(pk=request.POST.get("target") or 0, status=Batch.Status.IN_TRANSIT).first()
+            batch = receipt_import.create_batch(draft, choices, header, remember=bool(request.POST.get("remember")),
+                                                user=request.user, target=target)
             del request.session[IMPORT_SESSION_KEY]
-            messages.success(request, f"Поставка создана: {batch}. Товар «в пути» — примите его, когда придёт на склад.")
+            messages.success(request, f"{'Заказ обновлён по инвойсу' if target else 'Поставка создана'}: {batch}. "
+                             "Товар «в пути» — примите его, когда придёт на склад.")
             return redirect("stock:batch_detail", pk=batch.pk)
     products = Product.objects.in_bulk([r.product_id for r in rows if r.product_id] + [c for r in rows for c in r.candidate_ids])
     for r in rows:
@@ -264,6 +267,7 @@ def batch_import_preview(request):
         "all_products": Product.objects.select_related("customer").order_by("customer__name", "code"),
         "unmatched": sum(1 for r in rows if not r.product_id),
         "total_qty": sum(r.qty or 0 for r in rows),
+        "orders": Batch.objects.filter(status=Batch.Status.IN_TRANSIT, invoice="").annotate(qty=Sum("lines__qty_expected")).order_by("-created_at"),
     })
 
 
@@ -381,7 +385,7 @@ def _paperwork_warnings(shipment, lines, boxes):
 @login_required
 def shipment_detail(request, pk):
     shipment = get_object_or_404(Shipment.objects.select_related("customer"), pk=pk)
-    lines = list(shipment.lines.select_related("product", "batch"))
+    lines = list(shipment.lines.select_related("product", "batch", "spec_line__spec"))
     if pricing.can_see_costs(request.user):
         lines = pricing.with_costs(lines)
     total = sum((line.amount or 0) for line in lines)
@@ -413,8 +417,19 @@ def shipment_labels(request, pk):
 
 @login_required
 def shipment_create(request):
-    form = ShipmentForm(request.POST or None, request.FILES or None, initial={"date": dt.date.today()})
-    formset = ShipmentLineFormSet(request.POST or None, prefix="lines")
+    from sales import services as sales
+
+    initial, lines_initial = {"date": dt.date.today()}, []
+    req = None
+    if request.GET.get("request", "").isdigit():  # отгрузка по заявке: невыполненный остаток
+        from sales.models import CustomerRequest
+
+        req = get_object_or_404(CustomerRequest, pk=request.GET["request"])
+        initial.update(customer=req.customer, request=req)
+        lines_initial = [{"product": line.product, "qty": min(line.left, line.free) or line.left, "price_byn": line.price_byn}
+                         for line in sales.request_rows(req) if line.left]
+    form = ShipmentForm(request.POST or None, request.FILES or None, initial=initial)
+    formset = ShipmentLineFormSet(request.POST or None, prefix="lines", initial=lines_initial)
     if request.method == "POST" and form.is_valid() and formset.is_valid():
         rows = filled(formset)
         if not rows:
@@ -425,13 +440,16 @@ def shipment_create(request):
                     shipment = form.save(commit=False)
                     shipment.created_by = request.user
                     shipment.save()
+                    warnings = sales.apply_specs(shipment.customer, shipment.date, rows, form.cleaned_data.get("specification"))
                     services.post_shipment(shipment, _fill_prices(shipment.customer, rows))
             except services.InsufficientStock as e:
                 messages.error(request, f"Не хватает товара. {e}")
             else:
                 messages.success(request, f"Отгрузка проведена: {shipment}.")
+                for w in warnings:
+                    messages.warning(request, w)
                 return redirect("stock:shipment_detail", pk=shipment.pk)
-    return render(request, "stock/shipment_form.html", {"form": form, "formset": formset})
+    return render(request, "stock/shipment_form.html", {"form": form, "formset": formset, "req": req})
 
 
 @login_required

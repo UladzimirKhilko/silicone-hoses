@@ -15,6 +15,8 @@
       <a href="{% url 'stock:batch_list' %}">Приходы</a>
       <a href="{% url 'stock:shipment_list' %}">Отгрузки</a>
       <a href="{% url 'stock:adjustment_list' %}">Списания</a>
+      <a href="{% url 'sales:request_list' %}">Заявки</a>
+      <a href="{% url 'sales:contract_list' %}">Договоры</a>
       {% if can_see_costs %}<a href="{% url 'stock:profit_report' %}">Прибыль</a>{% endif %}
       {% if user.is_staff %}<a class="admin-link" href="{% url 'admin:index' %}">Админка</a>{% endif %}
       <form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button class="link">Выйти</button></form>

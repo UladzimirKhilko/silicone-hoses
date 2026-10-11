@@ -57,6 +57,11 @@
     <p><label>Номер паспорта</label><input name="passport_number" value="{{ header.passport_number }}" placeholder="09/003/25"></p>
   </div>
   <input type="hidden" name="notes" value="{{ header.notes }}">
+  {% if orders %}
+  <p><label>Это поставка по заказу?
+    <select name="target"><option value="">нет — новая поставка</option>{% for b in orders %}<option value="{{ b.pk }}">{{ b }} · {{ b.created_at|date:"d.m.Y" }} · {{ b.qty|default:0 }} шт</option>{% endfor %}</select></label>
+    <span class="helptext">Заказ, сохранённый «в пути» на странице «Заказ в Китай», заменится составом из инвойса — не будет дублей «в пути».</span></p>
+  {% endif %}
   <label class="check-label"><input type="checkbox" name="remember" value="1" checked> запомнить написания из этих документов как синонимы (в следующий раз узнаются сами)</label>
   <p class="muted small">Поставка будет создана со статусом «в пути»: в остатки попадёт после приёмки на складе.</p>
   <button class="btn primary">Создать поставку</button>

@@ -90,6 +90,8 @@ class Shipment(models.Model):
     ttn_number = models.CharField("№ ТТН", max_length=30, blank=True)
     ttn_scan = models.FileField("Скан ТТН", upload_to="ttn/%Y/", blank=True)
     notes = models.TextField("Примечание", blank=True)
+    request = models.ForeignKey("sales.CustomerRequest", verbose_name="По заявке", null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name="shipments")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -109,6 +111,8 @@ class ShipmentLine(models.Model):
     batch = models.ForeignKey(Batch, verbose_name="Партия", on_delete=models.PROTECT, related_name="shipment_lines")
     qty = models.PositiveIntegerField("Кол-во, шт")
     price_byn = models.DecimalField("Цена без НДС, BYN", max_digits=10, decimal_places=2, null=True, blank=True)
+    spec_line = models.ForeignKey("sales.SpecLine", verbose_name="По спецификации", null=True, blank=True,
+                                  on_delete=models.SET_NULL, related_name="shipment_lines")
 
     class Meta:
         ordering = ["product__code", "batch__received_date"]

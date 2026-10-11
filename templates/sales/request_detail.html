@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load stock_tags %}
+{% block title %}{{ req }} — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'sales:request_list' %}">← Заявки</a></p>
+<div class="head">
+  <div>
+    <h1>{{ req }}</h1>
+    <p class="muted"><span class="badge {% if req.is_open %}badge-sample{% endif %}">{{ req.get_status_display }}</span> · {{ req.get_source_display }}{% if req.due_date %} · срок {{ req.due_date|date:"d.m.Y" }}{% endif %}</p>
+  </div>
+  <div class="actions">
+    {% if req.is_open and summary.left %}<a class="btn primary" href="{% url 'stock:shipment_create' %}?request={{ req.pk }}">Отгрузить по заявке</a>{% endif %}
+    <a class="btn" href="{% url 'catalog:drawings_archive' %}?{{ ids }}">Чертежи (ZIP)</a>
+    {% if req.file %}<a class="btn" href="{% url 'sales:request_file' req.pk %}" target="_blank">Файл заявки</a>{% endif %}
+    <a class="btn" href="{% url 'sales:request_edit' req.pk %}">Изменить</a>
+  </div>
+</div>
+{% if req.notes %}<p class="note">{{ req.notes|linebreaksbr }}</p>{% endif %}
+<p class="summary">
+  <span class="badge">заказано {{ summary.qty }} шт</span>
+  <span class="badge">отгружено {{ summary.shipped }} шт · {{ summary.percent }} %</span>
+  {% if req.is_open %}
+    <span class="badge badge-serial">есть на складе {{ summary.covered }} из {{ summary.left }}</span>
+    {% if summary.short %}<span class="badge badge-drawing_pending">не хватает {{ summary.short }} шт</span>{% endif %}
+  {% endif %}
+</p>
+<div class="table-wrap">
+<table class="products">
+  <thead><tr><th>Изделие</th><th class="num">Заказано</th><th class="num">Отгружено</th><th class="num">Осталось</th><th class="num">На складе</th><th class="num" title="Под более ранние открытые заявки">Резерв других</th><th class="num">В пути</th><th class="num">Не хватает</th></tr></thead>
+  <tbody>
+  {% for l in rows %}
+    <tr class="{% if l.state == 'short' %}row-warn{% elif l.state == 'transit' %}row-attention{% endif %}">
+      <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a> <span class="muted small">{{ l.product.yapib }}</span>{% if l.price_byn %}<div class="muted small">цена заявки {{ l.price_byn|money }}</div>{% endif %}</td>
+      <td data-label="Заказано" class="num">{{ l.qty }}</td>
+      <td data-label="Отгружено" class="num">{{ l.shipped }}</td>
+      <td data-label="Осталось" class="num strong">{{ l.left }}</td>
+      <td data-label="На складе" class="num">{{ l.on_hand }}</td>
+      <td data-label="Резерв других" class="num">{{ l.reserved_before|default:"—" }}</td>
+      <td data-label="В пути" class="num">{{ l.in_transit|default:"—" }}</td>
+      <td data-label="Не хватает" class="num">{% if l.short %}<span class="minus strong">{{ l.short }}</span>{% elif l.left %}<span class="plus">есть</span>{% else %}<span class="plus">✓</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small">Резерв: пока заявка «в работе», её невыполненный остаток закреплён за ней. Очередь — по дате заявки: более ранние заявки резервируют товар первыми. Оранжевым — не хватает, но хватит с учётом товара в пути; красным — нужно заказывать в Китае.</p>
+
+<section class="card ttn">
+  <h2>Отгрузки по заявке</h2>
+  <ul>{% for s in shipments %}<li><a href="{% url 'stock:shipment_detail' s.pk %}">{{ s }}</a></li>{% empty %}<li class="muted">Пока нет. Отгрузку привязывают к заявке в форме отгрузки (поле «По заявке») или кнопкой «Отгрузить по заявке».</li>{% endfor %}</ul>
+  <form method="post" action="{% url 'sales:request_status' req.pk %}" class="alias-form">{% csrf_token %}
+    <select name="status">{% for v, l in statuses %}<option value="{{ v }}" {% if req.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn small">Сменить статус</button>
+  </form>
+  <form method="post" action="{% url 'sales:request_delete' req.pk %}" class="inline" onsubmit="return confirm('Удалить заявку?')">{% csrf_token %}<button class="link danger small">Удалить заявку</button></form>
+</section>
+{% endblock %}

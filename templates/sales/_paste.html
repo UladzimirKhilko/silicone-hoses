@@ -1,0 +1,8 @@
+<details class="card paste" {% if unknown or not formset.initial_form_count %}open{% endif %}>
+  <summary><b>Вставить таблицу из Excel или Word</b></summary>
+  <p class="muted small">Скопируйте строки таблицы (изделие — код, синоним или ЯПИБ; {{ paste_hint }}) и вставьте сюда. Сервис узнает изделия и добавит строки в таблицу ниже — проверьте их и сохраните.</p>
+  {% if pasted is not None %}<div class="msg">Добавлено строк: {{ pasted }}.</div>{% endif %}
+  {% if unknown %}<div class="msg msg-error">Не узнал {{ unknown|length }} строк — они оставлены в поле ниже. Добавьте изделия вручную или синоним в карточке изделия.</div>{% endif %}
+  <textarea name="paste" rows="6" placeholder="BSI D75L100-2	1000	6,85">{{ paste_text|default:"" }}</textarea>
+  <button class="btn" name="action" value="paste" formnovalidate>Разобрать вставку</button>
+</details>
