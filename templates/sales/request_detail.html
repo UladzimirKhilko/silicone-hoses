@@ -9,10 +9,10 @@
     <p class="muted"><span class="badge {% if req.is_open %}badge-sample{% endif %}">{{ req.get_status_display }}</span> · {{ req.get_source_display }}{% if req.due_date %} · срок {{ req.due_date|date:"d.m.Y" }}{% endif %}</p>
   </div>
   <div class="actions">
-    {% if req.is_open and summary.left %}<a class="btn primary" href="{% url 'stock:shipment_create' %}?request={{ req.pk }}">Отгрузить по заявке</a>{% endif %}
-    <a class="btn" href="{% url 'catalog:drawings_archive' %}?{{ ids }}">Чертежи (ZIP)</a>
-    {% if req.file %}<a class="btn" href="{% url 'sales:request_file' req.pk %}" target="_blank">Файл заявки</a>{% endif %}
-    <a class="btn" href="{% url 'sales:request_edit' req.pk %}">Изменить</a>
+    {% if req.is_open and summary.left %}<a class="btn primary" href="{% url 'stock:shipment_create' %}?request={{ req.pk }}">{% icon "truck" %}Отгрузить по заявке</a>{% endif %}
+    <a class="btn" href="{% url 'catalog:drawings_archive' %}?{{ ids }}">{% icon "download" %}Чертежи (ZIP)</a>
+    {% if req.file %}<a class="btn" href="{% url 'sales:request_file' req.pk %}" target="_blank">{% icon "eye" %}Файл заявки</a>{% endif %}
+    <a class="btn" href="{% url 'sales:request_edit' req.pk %}">{% icon "pencil" %}Изменить</a>
   </div>
 </div>
 {% if req.notes %}<p class="note">{{ req.notes|linebreaksbr }}</p>{% endif %}

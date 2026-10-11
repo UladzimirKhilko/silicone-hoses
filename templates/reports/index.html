@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Отчёты — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Отчёты</h1><p class="muted">Все отчёты выгружаются в Excel кнопкой «В Excel» на странице отчёта.</p></div></div>
+<div class="kpis">
+  <a class="kpi" href="{% url 'reports:shipments_monthly' %}">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "chart-column" %}</span>Отгрузки по месяцам</div>
+    <div class="kpi-sub">По заказчикам или изделиям: штуки и сумма без НДС за каждый месяц, итоги.</div>
+  </a>
+  <a class="kpi" href="{% url 'reports:low_stock' %}">
+    <div class="kpi-label"><span class="kpi-icon warn">{% icon "triangle-alert" %}</span>Заканчивается товар</div>
+    <div class="kpi-sub">Чего хватит меньше чем на 4 месяца продаж или меньше минимума — с подсказкой, сколько заказать.</div>
+  </a>
+  {% if can_see_costs %}
+  <a class="kpi" href="{% url 'stock:profit_report' %}">
+    <div class="kpi-label"><span class="kpi-icon ok">{% icon "trending-up" %}</span>Продажи и прибыль</div>
+    <div class="kpi-sub">Выручка, себестоимость, прибыль и маржа по месяцам, заказчикам и изделиям.</div>
+  </a>
+  {% endif %}
+  <a class="kpi" href="{% url 'stock:stock_export' %}">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "file-spreadsheet" %}</span>Остатки в Excel</div>
+    <div class="kpi-sub">Все изделия: остаток, в пути{% if can_see_costs %}, сумма по учётным ценам{% endif %}.</div>
+  </a>
+  <a class="kpi" href="{% url 'stock:shipment_list' %}?format=xlsx">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "file-spreadsheet" %}</span>Все отгрузки в Excel</div>
+    <div class="kpi-sub">Строки отгрузок: дата, заказчик, ТТН, изделие, партия, кол-во, цена, спецификация.</div>
+  </a>
+  <a class="kpi" href="{% url 'stock:batch_list' %}?format=xlsx">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "file-spreadsheet" %}</span>Все приходы в Excel</div>
+    <div class="kpi-sub">Строки поставок: инвойс, партия, изделие, кол-во, цена завода{% if can_see_costs %}, учётная цена{% endif %}.</div>
+  </a>
+</div>
+{% endblock %}

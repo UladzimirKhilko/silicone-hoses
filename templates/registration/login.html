@@ -1,14 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Вход — Патрубки BSI{% endblock %}
-{% block content %}
-<div class="login card">
-  <h1>Вход</h1>
-  {% if form.errors %}<div class="msg msg-error">Неверный логин или пароль.</div>{% endif %}
-  <form method="post">{% csrf_token %}
-    <label>Логин<input name="username" autocomplete="username" autofocus required></label>
-    <label>Пароль<input type="password" name="password" autocomplete="current-password" required></label>
+{% block guest %}
+<div class="login">
+  <div class="login-art" aria-hidden="true">
+    <div class="login-art-inner">
+      <span class="brand-mark big">BSI</span>
+      <h2>Силиконовые патрубки</h2>
+      <p>Остатки и чертежи под рукой, приходы из Китая, отгрузки с паспортами и бирками, заявки, спецификации и прибыль — в одном месте.</p>
+      <ul>
+        <li>{% icon "boxes" %} Остатки по партиям и «в пути»</li>
+        <li>{% icon "printer" %} Паспорт и бирки в один клик</li>
+        <li>{% icon "trending-up" %} Цены, маржа и отчёты</li>
+      </ul>
+    </div>
+  </div>
+  <form method="post" class="login-form">{% csrf_token %}
+    <span class="brand-mark">BSI</span>
+    <h1>Вход в систему</h1>
+    <p class="muted">Учёт патрубков BSI</p>
+    {% if form.errors %}<div class="msg msg-error">{% icon "circle-alert" %}<span>Неверный логин или пароль.</span></div>{% endif %}
+    <label class="field">Логин<input name="username" autocomplete="username" autofocus required></label>
+    <label class="field">Пароль<input type="password" name="password" autocomplete="current-password" required></label>
     <input type="hidden" name="next" value="{{ next }}">
-    <button class="btn primary">Войти</button>
+    <button class="btn primary block">Войти</button>
+    <p class="muted small">Нет доступа — обратитесь к руководителю.</p>
   </form>
 </div>
 {% endblock %}

@@ -2,11 +2,11 @@
 {% load stock_tags %}
 {% block title %}Отгрузки — Патрубки BSI{% endblock %}
 {% block content %}
-<div class="head"><h1>Отгрузки</h1><a class="btn primary" href="{% url 'stock:shipment_create' %}">+ Отгрузка</a></div>
+<div class="head"><div><h1>Отгрузки</h1><p class="muted">Заказчикам: ТТН, паспорта, бирки{% if can_see_costs %}, прибыль{% endif %}</p></div><div class="actions"><a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=xlsx">{% icon "file-spreadsheet" %}В Excel</a><a class="btn primary" href="{% url 'stock:shipment_create' %}">{% icon "plus" %}Отгрузка</a></div></div>
 <form method="get" class="filters">
   <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if filters.customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <input type="month" name="month" value="{{ filters.month }}">
-  <button class="btn">Показать</button>
+  <button class="btn primary">Показать</button>
   {% if filters %}<a class="btn ghost" href="{% url 'stock:shipment_list' %}">Сбросить</a>{% endif %}
 </form>
 <div class="table-wrap">

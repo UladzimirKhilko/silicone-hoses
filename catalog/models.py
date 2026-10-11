@@ -61,6 +61,8 @@ class Product(models.Model):
     l1 = models.DecimalField("L1, мм", max_digits=7, decimal_places=1, null=True, blank=True)
     l2 = models.DecimalField("L2, мм", max_digits=7, decimal_places=1, null=True, blank=True)
     status = models.CharField("Статус", max_length=20, choices=Status.choices, default=Status.SAMPLE)
+    min_stock = models.PositiveIntegerField("Минимальный остаток, шт", null=True, blank=True,
+                                            help_text="Меньше — изделие попадёт в «Заканчивается». Пусто — по средним отгрузкам")
     notes = models.TextField("Примечание", blank=True)
     search_text = models.TextField(editable=False, blank=True)
 

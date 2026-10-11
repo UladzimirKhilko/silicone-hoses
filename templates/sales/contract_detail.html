@@ -5,9 +5,9 @@
 <div class="head">
   <div><h1>{{ contract }}</h1><p class="muted">{{ contract.customer }}{% if contract.valid_until %} · действует до {{ contract.valid_until|date:"d.m.Y" }}{% endif %}</p></div>
   <div class="actions">
-    {% if contract.file %}<a class="btn" href="{% url 'sales:contract_file' contract.pk %}" target="_blank">Скан договора</a>{% endif %}
-    <a class="btn" href="{% url 'sales:contract_edit' contract.pk %}">Изменить</a>
-    <a class="btn primary" href="{% url 'sales:spec_create' contract.pk %}">+ Спецификация</a>
+    {% if contract.file %}<a class="btn" href="{% url 'sales:contract_file' contract.pk %}" target="_blank">{% icon "eye" %}Скан договора</a>{% endif %}
+    <a class="btn" href="{% url 'sales:contract_edit' contract.pk %}">{% icon "pencil" %}Изменить</a>
+    <a class="btn primary" href="{% url 'sales:spec_create' contract.pk %}">{% icon "plus" %}Спецификация</a>
   </div>
 </div>
 {% if contract.notes %}<p class="note">{{ contract.notes|linebreaksbr }}</p>{% endif %}

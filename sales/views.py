@@ -132,6 +132,13 @@ def spec_edit(request, contract_pk=None, pk=None):
 def spec_detail(request, pk):
     spec = get_object_or_404(Specification.objects.select_related("contract__customer"), pk=pk)
     rows = services.spec_rows(spec)
+    if request.GET.get("format") == "xlsx":
+        from reports import excel
+
+        data = [[l.product.code, l.product.yapib, l.price_byn, l.qty_limit, l.shipped, l.left, l.on_hand] for l in rows]
+        return excel.table("Спецификация", ["Изделие", "ЯПИБ", "Цена без НДС", "Лимит", "Отгружено", "Осталось по лимиту", "На складе"],
+                           data, f"{spec.customer} спецификация {spec.number}.xlsx".replace("/", "-"),
+                           caption=f"{spec.customer} · {spec.contract} · {spec}")
     unlinked = ShipmentLine.objects.filter(spec_line__isnull=True, product_id__in=[line.product_id for line in rows],
                                            shipment__customer=spec.customer, shipment__date__gte=spec.date)
     if spec.valid_until:
@@ -189,6 +196,16 @@ def request_list(request):
     if request.GET.get("customer", "").isdigit():
         items = items.filter(customer_id=request.GET["customer"])
     items = list(items)
+    if request.GET.get("format") == "xlsx":
+        from reports import excel
+
+        rows = []
+        for item in items:
+            for line in services.request_rows(item):
+                rows.append([item.date, item.customer.name, item.number, item.get_status_display(), item.due_date, line.product.code,
+                             line.qty, line.shipped, line.left, line.on_hand, line.short])
+        return excel.table("Заявки", ["Дата", "Заказчик", "Номер", "Статус", "Срок", "Изделие", "Заказано", "Отгружено", "Осталось",
+                                      "На складе", "Не хватает"], rows, f"Заявки {dt.date.today():%Y-%m-%d}.xlsx")
     for item in items:
         item.summary = services.request_summary(services.request_rows(item))
     return render(request, "sales/request_list.html", {
@@ -273,6 +290,7 @@ def china_order(request):
     from .forms import OrderLineFormSet
 
     rows = china.suggestions()
+    rows += china.low_stock_suggestions(exclude={r["product"].pk for r in rows})
     extra = OrderLineFormSet(request.POST or None, prefix="extra")
     ctx = {"rows": rows, "extra": extra, "today": dt.date.today()}
     if request.method == "POST":
@@ -302,8 +320,9 @@ def china_order(request):
             return redirect(batch)
         else:
             ctx.update(text=china.wechat_text(lines, dt.date.today()), chosen=chosen)
-    ctx.setdefault("chosen", {r["product"].pk: r["suggested"] for r in rows})
+    ctx.setdefault("chosen", {r["product"].pk: r["suggested"] for r in rows if r["reason"] == "requests"})
     for r in rows:
         r["qty"] = ctx["chosen"].get(r["product"].pk, r["suggested"])
         r["use"] = r["product"].pk in ctx["chosen"]
+    ctx["has_low"] = any(r["reason"] == "low" for r in rows)
     return render(request, "sales/china_order.html", ctx)

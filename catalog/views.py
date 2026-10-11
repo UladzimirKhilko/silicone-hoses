@@ -71,6 +71,12 @@ def product_detail(request, pk):
     balances = batch_balances([product.pk])
     batches = [(b, q) for (p, b), q in balances.items() if q]
     reserved = sales_services.reserved([product.pk]).get(product.pk, 0)
+    if request.GET.get("format") == "xlsx":
+        from reports import excel
+
+        rows = [[m.date, m.title, m.batch.short_label, m.qty, m.balance] for m in movements(product)]
+        return excel.table("Движение", ["Дата", "Документ", "Партия", "Кол-во", "Остаток"], rows,
+                           f"Движение {product.code}.xlsx".replace("/", "-"), caption=f"{product.code} · ЯПИБ {product.yapib}")
     return render(
         request,
         "catalog/product_detail.html",

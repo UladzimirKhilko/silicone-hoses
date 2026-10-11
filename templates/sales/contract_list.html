@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Договоры — Патрубки BSI{% endblock %}
 {% block content %}
-<div class="head"><h1>Договоры и спецификации</h1><a class="btn primary" href="{% url 'sales:contract_create' %}">+ Договор</a></div>
+<div class="head"><div><h1>Договоры и спецификации</h1><p class="muted">Цены продажи и лимиты заказчиков</p></div><a class="btn primary" href="{% url 'sales:contract_create' %}">{% icon "plus" %}Договор</a></div>
 <p class="muted small">Спецификация задаёт цену продажи без НДС и лимит по количеству. При отгрузке цена подставляется из самой новой действующей спецификации заказчика, а отгрузка уменьшает остаток лимита.</p>
 {% for customer, contracts in customers %}
 <section class="card contract-block">
@@ -9,7 +9,7 @@
   {% for c in contracts %}
   <div class="contract">
     <div class="head"><a href="{{ c.get_absolute_url }}"><b>{{ c }}</b></a>{% if c.valid_until %}<span class="muted small">до {{ c.valid_until|date:"d.m.Y" }}</span>{% endif %}
-      <a class="btn small" href="{% url 'sales:spec_create' c.pk %}">+ Спецификация</a></div>
+      <a class="btn small" href="{% url 'sales:spec_create' c.pk %}">{% icon "plus" %}Спецификация</a></div>
     <div class="table-wrap"><table class="mini">
       {% for s in c.specifications.all %}
       <tr><td><a href="{{ s.get_absolute_url }}">{{ s }}</a></td>

@@ -2,13 +2,13 @@
 {% load stock_tags %}
 {% block title %}Продажи и прибыль — Патрубки BSI{% endblock %}
 {% block content %}
-<div class="head"><h1>Продажи и прибыль</h1>
-  <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=xlsx">В Excel</a></div>
+<div class="head"><div><h1>Продажи и прибыль</h1><p class="muted">Видит только руководитель</p></div>
+  <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=xlsx">{% icon "file-spreadsheet" %}В Excel</a></div>
 <form method="get" class="filters">
   <label class="check-label">с <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}"></label>
   <label class="check-label">по <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}"></label>
   <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-  <button class="btn">Показать</button>
+  <button class="btn primary">Показать</button>
 </form>
 
 <p class="summary">

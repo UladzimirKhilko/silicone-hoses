@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Сводка — Патрубки BSI{% endblock %}
+{% block content %}
+<div class="head page-hello">
+  <div>
+    <h1>Добрый день{% if user.first_name %}, {{ user.first_name }}{% endif %}</h1>
+    <p class="muted">Сводка на {{ today|date:"j E Y" }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'stock:batch_import' %}">{% icon "file-up" %}Приход из файлов завода</a>
+    <a class="btn" href="{% url 'sales:request_create' %}">{% icon "plus" %}Заявка</a>
+    <a class="btn primary" href="{% url 'stock:shipment_create' %}">{% icon "truck" %}Новая отгрузка</a>
+  </div>
+</div>
+
+<div class="kpis">
+  <a class="kpi" href="{% url 'catalog:product_list' %}?in_stock=1">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "boxes" %}</span>На складе</div>
+    <div class="kpi-value">{{ on_hand|money:0 }}<small>шт</small></div>
+    <div class="kpi-sub">{{ positions }} позиций{% if stock_value is not None %} · {{ stock_value|money:0 }} BYN по учётным ценам{% endif %}</div>
+  </a>
+  <a class="kpi" href="{% url 'stock:batch_list' %}">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "ship" %}</span>В пути из Китая</div>
+    <div class="kpi-value">{{ transit_qty|money:0 }}<small>шт</small></div>
+    <div class="kpi-sub">{% if transit_batches %}поставок в пути: {{ transit_batches|length }}{% else %}поставок в пути нет{% endif %}</div>
+  </a>
+  <a class="kpi" href="{% url 'stock:shipment_list' %}?month={{ today|date:'Y-m' }}">
+    <div class="kpi-label"><span class="kpi-icon ok">{% icon "truck" %}</span>Отгружено, {{ month_label }}</div>
+    <div class="kpi-value">{{ cur.amount|money:0 }}<small>BYN</small></div>
+    <div class="kpi-sub">{{ cur.qty|money:0 }} шт{% if delta is not None %} · <span class="delta {% if delta >= 0 %}up{% else %}down{% endif %}">{% if delta >= 0 %}+{% endif %}{{ delta }} %</span> к прошлому месяцу{% endif %}</div>
+  </a>
+  {% if profit_month %}
+  <a class="kpi" href="{% url 'stock:profit_report' %}">
+    <div class="kpi-label"><span class="kpi-icon ok">{% icon "trending-up" %}</span>Прибыль, {{ month_label }}</div>
+    <div class="kpi-value">{% if profit_month.approx %}≈ {% endif %}{{ profit_month.profit|money:0 }}<small>BYN</small></div>
+    <div class="kpi-sub">маржа {{ profit_month.margin|pct }}</div>
+  </a>
+  {% endif %}
+  <a class="kpi" href="{% url 'sales:request_list' %}">
+    <div class="kpi-label"><span class="kpi-icon {% if short_total %}bad{% else %}ok{% endif %}">{% icon "clipboard-list" %}</span>Заявки в работе</div>
+    <div class="kpi-value">{{ open_count }}</div>
+    <div class="kpi-sub">{% if short_total %}не хватает {{ short_total|money:0 }} шт{% else %}товара под заявки хватает{% endif %}</div>
+  </a>
+</div>
+
+<div class="dash-grid">
+  <div class="stack">
+    <section class="card">
+      <div class="head"><div><h2>Отгрузки по месяцам</h2><p class="muted small">Сумма без НДС, BYN · последние 12 месяцев</p></div>
+        <a class="btn small" href="{% url 'reports:shipments_monthly' %}">Подробно {% icon "chevron-right" %}</a></div>
+      <div class="chart-scroll">{% include "reports/_bars.html" with aria="Отгрузки по месяцам, BYN без НДС" %}</div>
+      <details class="small"><summary>Таблица</summary>
+        <table class="mini"><thead><tr><th>Месяц</th><th class="num">Шт</th><th class="num">BYN без НДС</th></tr></thead>
+          <tbody>{% for label, c in chart_rows %}<tr><td>{{ label }}</td><td class="num">{{ c.qty }}</td><td class="num">{{ c.amount|money }}</td></tr>{% endfor %}</tbody></table>
+      </details>
+    </section>
+
+    <section class="card">
+      <div class="head"><h2>Последние отгрузки</h2><a class="btn small" href="{% url 'stock:shipment_list' %}">Все {% icon "chevron-right" %}</a></div>
+      <ul class="list">
+        {% for s in recent %}
+          <li><span class="kpi-icon">{% icon "truck" %}</span>
+            <span class="grow"><a href="{% url 'stock:shipment_detail' s.pk %}">{{ s.customer }}</a><small>{{ s.date|date:"d.m.Y" }}{% if s.ttn_number %} · ТТН {{ s.ttn_number }}{% endif %}</small></span>
+            <span class="num strong">{{ s.qty|default:0 }} шт</span></li>
+        {% empty %}<li class="muted">Отгрузок пока нет.</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <div class="head"><h2>{% icon "triangle-alert" %} Заканчивается</h2><a class="btn small" href="{% url 'reports:low_stock' %}">Все {% icon "chevron-right" %}</a></div>
+      <ul class="list">
+        {% for r in low %}
+          <li><span class="grow"><a href="{{ r.product.get_absolute_url }}">{{ r.product.code }}</a>
+              <small>{% if r.months is not None %}хватит на {{ r.months }} мес{% else %}ниже минимума{% endif %} · доступно {{ r.available }} шт</small></span>
+            <span class="meter {{ r.level }}" title="{{ r.percent }} % от запаса на {{ cover }} мес"><span style="width: {{ r.percent }}%"></span></span></li>
+        {% empty %}<li class="muted">{% icon "check" %} Всего хватает минимум на 4 месяца.</li>{% endfor %}
+      </ul>
+      {% if low %}<a class="btn small" href="{% url 'sales:china_order' %}">{% icon "ship" %}Заказ в Китай</a>{% endif %}
+    </section>
+
+    <section class="card">
+      <div class="head"><h2>Заказчики, {{ year }}</h2></div>
+      <ul class="list">
+        {% for t in top %}
+          <li><span class="grow"><b>{{ t.name }}</b><small>{{ t.qty|money:0 }} шт · {{ t.amount|money:0 }} BYN</small></span>
+            <span class="meter"><span style="width: {{ t.percent }}%"></span></span></li>
+        {% empty %}<li class="muted">В этом году отгрузок нет.</li>{% endfor %}
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="head"><h2>Заявки в работе</h2><a class="btn small" href="{% url 'sales:request_list' %}">Все {% icon "chevron-right" %}</a></div>
+      <ul class="list">
+        {% for r in open_requests %}
+          <li><span class="grow"><a href="{{ r.get_absolute_url }}">{{ r.customer }}{% if r.number %} · {{ r.number }}{% endif %}</a>
+              <small>от {{ r.date|date:"d.m.Y" }} · выполнено {{ r.summary.percent }} %</small></span>
+            {% if r.summary.short %}<span class="badge badge-drawing_pending">−{{ r.summary.short }}</span>{% else %}<span class="badge badge-serial">есть</span>{% endif %}</li>
+        {% empty %}<li class="muted">Открытых заявок нет.</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+{% endblock %}

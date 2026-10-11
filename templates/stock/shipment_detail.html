@@ -7,7 +7,7 @@
   <div><h1>{{ shipment }}</h1>
     {% if shipment.request %}<p class="muted">По заявке: <a href="{{ shipment.request.get_absolute_url }}">{{ shipment.request }}</a></p>{% endif %}
     {% if shipment.notes %}<p class="muted">{{ shipment.notes }}</p>{% endif %}</div>
-  <form method="post" action="{% url 'stock:shipment_delete' shipment.pk %}" class="inline" onsubmit="return confirm('Удалить отгрузку? Товар вернётся в остаток.')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
+  <form method="post" action="{% url 'stock:shipment_delete' shipment.pk %}" class="inline" onsubmit="return confirm('Удалить отгрузку? Товар вернётся в остаток.')">{% csrf_token %}<button class="btn ghost danger">{% icon "trash-2" %}Удалить</button></form>
 </div>
 <div class="table-wrap">
 <table class="products">
@@ -37,8 +37,8 @@
   <div class="head">
     <h2>Паспорт и бирки</h2>
     <div class="actions">
-      <a class="btn primary" href="{% url 'stock:shipment_passport' shipment.pk %}">Паспорт (Word)</a>
-      <a class="btn primary" href="{% url 'stock:shipment_labels' shipment.pk %}">Бирки (Word)</a>
+      <a class="btn primary" href="{% url 'stock:shipment_passport' shipment.pk %}">{% icon "file-text" %}Паспорт (Word)</a>
+      <a class="btn primary" href="{% url 'stock:shipment_labels' shipment.pk %}">{% icon "printer" %}Бирки (Word)</a>
     </div>
   </div>
   {% for w in paperwork_warnings %}<div class="msg msg-error">{{ w }}</div>{% endfor %}
@@ -52,7 +52,7 @@
 
 <section class="card ttn">
   <h2>ТТН</h2>
-  {% if shipment.ttn_scan %}<p><a class="btn" href="{% url 'stock:shipment_ttn_scan' shipment.pk %}" target="_blank">Открыть скан ТТН</a></p>{% endif %}
+  {% if shipment.ttn_scan %}<p><a class="btn" href="{% url 'stock:shipment_ttn_scan' shipment.pk %}" target="_blank">{% icon "eye" %}Открыть скан ТТН</a></p>{% endif %}
   <form method="post" enctype="multipart/form-data" action="{% url 'stock:shipment_attach_ttn' shipment.pk %}" class="alias-form">{% csrf_token %}
     <input name="ttn_number" value="{{ shipment.ttn_number }}" placeholder="№ ТТН">
     <input type="file" name="ttn_scan" accept="application/pdf,image/*">

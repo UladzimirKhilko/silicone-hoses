@@ -5,7 +5,7 @@
 <h1>{% if spec %}Изменить {{ spec }}{% else %}Новая спецификация{% endif %}</h1>
 <p class="muted">{{ contract.customer }} · {{ contract }}</p>
 <form method="post" enctype="multipart/form-data" class="card form">{% csrf_token %}
-  <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}</div>
+  {% include "_fields.html" %}
   {% include "sales/_paste.html" with paste_hint="затем количество (лимит) и цена без НДС" %}
   <h2>Изделия, цены и лимиты</h2>
   {% include "stock/_lines.html" with lines_note="Пустые строки не учитываются. Не хватает строк — сохраните и нажмите «Изменить»: добавятся ещё пустые." %}

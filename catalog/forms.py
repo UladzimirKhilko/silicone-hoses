@@ -6,7 +6,7 @@ from .models import DrawingFile, Product, ProductAlias
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ["code", "yapib", "customer", "status", "kind", "color", "angle", "d1", "d2", "l1", "l2", "notes"]
+        fields = ["code", "yapib", "customer", "status", "kind", "color", "angle", "d1", "d2", "l1", "l2", "min_stock", "notes"]
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
         localized_fields = ["d1", "d2", "l1", "l2"]  # можно вводить «63,5»
         help_texts = {

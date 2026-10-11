@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Отгрузки по месяцам — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'reports:index' %}">← Отчёты</a></p>
+<div class="head"><div><h1>Отгрузки по месяцам</h1><p class="muted">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }} · без НДС</p></div>
+  <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=xlsx">{% icon "file-spreadsheet" %}В Excel</a></div>
+<form method="get" class="filters">
+  <label class="check-label">с <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}"></label>
+  <label class="check-label">по <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}"></label>
+  <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="by"><option value="customer">по заказчикам</option><option value="product" {% if by == "product" %}selected{% endif %}>по изделиям</option></select>
+  <select name="measure"><option value="amount">BYN</option><option value="qty" {% if measure == "qty" %}selected{% endif %}>штуки</option></select>
+  <button class="btn primary">Показать</button>
+</form>
+<div class="summary"><span class="badge">отгружено {{ grand.qty|money:0 }} шт</span><span class="badge badge-serial">сумма {{ grand.amount|money }} BYN</span></div>
+<section class="card">
+  <h2>{% if measure == "qty" %}Штуки{% else %}Сумма без НДС, BYN{% endif %} по месяцам</h2>
+  <div class="chart-scroll">{% include "reports/_bars.html" %}</div>
+</section>
+<section class="card">
+  <div class="table-wrap">
+  <table class="mini pivot">
+    <thead><tr><th>{% if by == "product" %}Изделие{% else %}Заказчик{% endif %}</th>{% for m, label in months %}<th class="num">{{ label }}</th>{% endfor %}<th class="num">Итого</th></tr></thead>
+    <tbody>
+    {% for r, cells in rows %}
+      <tr><td class="strong">{{ r.label }}</td>{% for c in cells %}<td class="num">{% if measure == "qty" %}{{ c.qty|default:"" }}{% elif c.amount %}{{ c.amount|money:0 }}{% endif %}</td>{% endfor %}
+        <td class="num strong">{% if measure == "qty" %}{{ r.total.qty }}{% else %}{{ r.total.amount|money:0 }}{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="{{ months|length|add:2 }}" class="empty">Отгрузок за период нет.</td></tr>{% endfor %}
+    {% if rows %}<tr class="total"><td>Итого</td>{% for c in totals %}<td class="num">{% if measure == "qty" %}{{ c.qty|default:"" }}{% elif c.amount %}{{ c.amount|money:0 }}{% endif %}</td>{% endfor %}
+      <td class="num">{% if measure == "qty" %}{{ grand.qty }}{% else %}{{ grand.amount|money:0 }}{% endif %}</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

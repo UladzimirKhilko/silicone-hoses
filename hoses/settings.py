@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "catalog",
     "stock",
     "sales",
+    "reports",
 ]
 
 MIDDLEWARE = [
@@ -69,7 +70,9 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "stock.context_processors.costs",
+                "catalog.context_processors.ui",
             ],
+            "builtins": ["catalog.templatetags.ui", "stock.templatetags.stock_tags"],
         },
     },
 ]
@@ -140,7 +143,7 @@ LOGGING = {
 }
 
 LOGIN_URL = "login"
-LOGIN_REDIRECT_URL = "catalog:product_list"
+LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "login"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

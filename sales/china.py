@@ -60,7 +60,23 @@ def suggestions():
         rows.append({
             "product": product, "demand": demand[product.pk], "on_hand": have.get(product.pk, 0),
             "in_transit": transit.get(product.pk, 0), "short": short, "carton": per,
-            "suggested": math.ceil(short / per) * per if per else short, "requests": sources[product.pk],
+            "suggested": math.ceil(short / per) * per if per else short, "requests": sources[product.pk], "reason": "requests",
+        })
+    return rows
+
+
+def low_stock_suggestions(exclude=()):
+    """Заканчивается (отчёт этапа 6) — изделия, которых нет среди нехватки под заявки."""
+    from reports.analytics import low_stock
+
+    rows = []
+    for r in low_stock():
+        if r["product"].pk in exclude or not r["suggested"]:
+            continue
+        rows.append({
+            "product": r["product"], "demand": 0, "on_hand": r["on_hand"], "in_transit": r["in_transit"], "short": r["suggested"],
+            "carton": r["carton"], "suggested": r["suggested"], "requests": [], "reason": "low",
+            "months": r["months"], "avg": r["avg"],
         })
     return rows
 

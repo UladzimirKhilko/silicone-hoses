@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Списания — Патрубки BSI{% endblock %}
 {% block content %}
-<div class="head"><h1>Списания и корректировки</h1><a class="btn primary" href="{% url 'stock:adjustment_create' %}">+ Списание</a></div>
+<div class="head"><div><h1>Списания и корректировки</h1><p class="muted">Брак, недостача, бесплатные образцы, инвентаризация</p></div><div class="actions"><a class="btn" href="?format=xlsx">{% icon "file-spreadsheet" %}В Excel</a><a class="btn primary" href="{% url 'stock:adjustment_create' %}">{% icon "plus" %}Списание</a></div></div>
 <table class="products">
   <thead><tr><th>Дата</th><th>Причина</th><th>Заказчик</th><th class="num">Штук</th></tr></thead>
   <tbody>

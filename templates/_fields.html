@@ -1,0 +1,4 @@
+<div class="grid2 fields">{% for f in form.visible_fields %}
+  {% if f.widget_type == "checkbox" %}<p class="field-check"><label class="check-label">{{ f }} {{ f.label }}</label>{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>
+  {% else %}<p class="{% if f.widget_type == 'textarea' %}wide{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>{% endif %}
+{% endfor %}{% for f in form.hidden_fields %}{{ f }}{% endfor %}</div>

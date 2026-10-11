@@ -118,7 +118,7 @@ def test_boss_sees_profit_everywhere(boss, product, mtz):
     html = boss.get(reverse("stock:shipment_detail", args=[s.pk])).content.decode()
     assert "15,30" in html and "30,6 %" in html  # (5 − 3,47) × 10; 15,30 / 50
     assert "15,30" in boss.get(reverse("stock:shipment_list")).content.decode()
-    assert "312,30" in boss.get(reverse("catalog:product_list")).content.decode()  # 90 × 3,47
+    assert boss.get(reverse("catalog:product_list")).context["stock_value"] == Decimal("312.30")  # 90 × 3,47
     resp = boss.get(reverse("stock:profit_report"), {"date_from": "2025-01-01", "date_to": "2025-12-31"})
     assert "март 2025" in resp.content.decode() and resp.context["total"].profit == Decimal("15.30")
     xlsx = boss.get(reverse("stock:profit_report"), {"date_from": "2025-01-01", "date_to": "2025-12-31", "format": "xlsx"})

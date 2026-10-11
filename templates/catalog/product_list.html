@@ -1,47 +1,59 @@
 {% extends "base.html" %}
-{% load stock_tags %}
+{% block title %}Остатки — Патрубки BSI{% endblock %}
 {% block content %}
-<form method="get" class="filters">
-  <input type="search" name="q" value="{{ filters.q }}" placeholder="Поиск: 90-38, D60, 24.1155, красный, МТЗ…" autofocus>
-  <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if filters.customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+<div class="head">
+  <div>
+    <h1>Остатки и изделия</h1>
+    <p class="muted">Найдено {{ products|length }} · на складе <b>{{ total_on_hand|money:0 }} шт</b>{% if can_see_costs and stock_value is not None %} · по учётным ценам <b>{{ stock_value|money:0 }} BYN</b>{% if stock_value_missing %} <span title="Остаток без учётной цены — не вошёл в сумму">(без цены {{ stock_value_missing }} шт)</span>{% endif %}{% endif %}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'stock:stock_export' %}?{{ request.GET.urlencode }}">{% icon "file-spreadsheet" %}В Excel</a>
+    <a class="btn primary" href="{% url 'catalog:product_create' %}">{% icon "plus" %}Изделие</a>
+  </div>
+</div>
+
+<nav class="segments">
+  <a href="?{% if filters.in_stock %}in_stock=1{% endif %}" class="{% if not filters.customer %}active{% endif %}">Все</a>
+  {% for c in customers %}<a href="?customer={{ c.pk }}{% if filters.in_stock %}&in_stock=1{% endif %}" class="{% if filters.customer == c.pk|stringformat:'s' %}active{% endif %}">{{ c.name }}</a>{% endfor %}
+</nav>
+
+<form method="get" class="filters card filter-card">
+  {% if filters.customer %}<input type="hidden" name="customer" value="{{ filters.customer }}">{% endif %}
+  <div class="search-inline">{% icon "search" %}<input type="search" name="q" value="{{ filters.q }}" placeholder="90-38, D60, 24.1155, красный…"></div>
   <select name="kind"><option value="">Любой тип</option>{% for v,l in kinds %}<option value="{{ v }}" {% if filters.kind == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="color"><option value="">Любой цвет</option>{% for v,l in colors %}<option value="{{ v }}" {% if filters.color == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="status"><option value="">Любой статус</option>{% for v,l in statuses %}<option value="{{ v }}" {% if filters.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
-  <label class="check-label"><input type="checkbox" name="in_stock" value="1" {% if filters.in_stock %}checked{% endif %}> только в наличии</label>
-  <button class="btn">Найти</button>
+  <label class="check-label"><input type="checkbox" name="in_stock" value="1" {% if filters.in_stock %}checked{% endif %}> в наличии</label>
+  <button class="btn primary">Найти</button>
   {% if filters %}<a class="btn ghost" href="{% url 'catalog:product_list' %}">Сбросить</a>{% endif %}
 </form>
 
 <form method="get" action="{% url 'catalog:drawings_archive' %}" id="archive">
-  <div class="toolbar">
-    <span class="muted">Найдено: {{ products|length }} · на складе {{ total_on_hand }} шт{% if can_see_costs and stock_value is not None %} · по учётным ценам <b>{{ stock_value|money }} BYN</b>{% if stock_value_missing %} <span title="Остаток без учётной цены — не вошёл в сумму">(без цены {{ stock_value_missing }} шт)</span>{% endif %}{% endif %}</span>
-    <span class="spacer"></span>
+  <div class="selection-bar" data-selection-bar>
+    <span><b data-selected-count>0</b> выбрано</span>
     <select name="kind">{% for v,l in drawing_kinds %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
-    <button class="btn" title="Отметьте изделия галочками">Скачать чертежи (ZIP)</button>
-    <a class="btn" href="{% url 'stock:stock_export' %}?{{ request.GET.urlencode }}">Остатки в Excel</a>
-    <a class="btn primary" href="{% url 'catalog:product_create' %}">+ Изделие</a>
+    <button class="btn primary small">{% icon "download" %}Чертежи ZIP</button>
   </div>
-
-  <table class="products">
-    <thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('input[name=ids]').forEach(c=>c.checked=this.checked)" aria-label="Выбрать все"></th><th>Код</th><th>ЯПИБ</th><th>Заказчик</th><th>Тип / размеры</th><th>Цвет</th><th>Статус</th><th class="num">Остаток</th><th class="num">В пути</th><th>Чертёж</th></tr></thead>
+  <div class="table-wrap">
+  <table class="products product-table">
+    <thead><tr><th class="check-col"><input type="checkbox" data-check-all aria-label="Выбрать все"></th><th>Изделие</th><th>Заказчик</th><th>Статус</th><th class="num">Остаток</th><th class="num">В пути</th><th></th></tr></thead>
     <tbody>
     {% for p in products %}
-      <tr>
+      <tr data-href="{{ p.get_absolute_url }}">
         <td class="check"><input type="checkbox" name="ids" value="{{ p.pk }}" aria-label="Выбрать {{ p.code }}"></td>
-        <td class="code"><a href="{{ p.get_absolute_url }}">{{ p.code }}</a></td>
-        <td data-label="ЯПИБ">{{ p.yapib|default:"—" }}</td>
+        <td class="code"><a href="{{ p.get_absolute_url }}">{% if p.color %}<span class="dot dot-{{ p.color }}" title="{{ p.get_color_display }}"></span>{% endif %}{{ p.code }}</a>
+          <div class="sub">{% if p.yapib %}ЯПИБ {{ p.yapib }} · {% endif %}{{ p.get_kind_display|default:"" }} {{ p.size_label }}</div></td>
         <td data-label="Заказчик">{{ p.customer|default:"—" }}</td>
-        <td data-label="Тип">{{ p.get_kind_display|default:"" }} <span class="muted">{{ p.size_label }}</span></td>
-        <td data-label="Цвет">{% if p.color %}<span class="dot dot-{{ p.color }}"></span>{{ p.get_color_display }}{% endif %}</td>
         <td data-label="Статус"><span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></td>
-        <td data-label="Остаток" class="num {% if p.on_hand %}strong{% else %}muted{% endif %}">{{ p.on_hand }}</td>
-        <td data-label="В пути" class="num muted">{% if p.in_transit %}{{ p.in_transit }}{% else %}—{% endif %}</td>
-        <td data-label="Чертёж">{% with d=p.drawing_files.all %}{% if d %}<a class="btn small" href="{{ p.get_absolute_url }}">Открыть</a>{% else %}<span class="muted">нет</span>{% endif %}{% endwith %}</td>
+        <td data-label="Остаток" class="num stock-cell {% if p.on_hand %}strong{% else %}muted{% endif %}">{{ p.on_hand|money:0 }}</td>
+        <td data-label="В пути" class="num muted">{% if p.in_transit %}{{ p.in_transit|money:0 }}{% else %}—{% endif %}</td>
+        <td class="row-end">{% with d=p.drawing_files.all %}{% if d %}<span title="Есть чертёж">{% icon "image" "muted" %}</span>{% endif %}{% endwith %}{% icon "chevron-right" "muted" %}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="10" class="empty">Ничего не найдено.</td></tr>
+      <tr><td colspan="7" class="empty">Ничего не найдено.</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </form>
 {% endblock %}

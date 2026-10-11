@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Заканчивается — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'reports:index' %}">← Отчёты</a></p>
+<div class="head"><div><h1>Заканчивается товар</h1>
+  <p class="muted">Доступно = на складе + в пути − резерв под заявки. В списке — чего хватит меньше чем на {{ cover }} мес. (по средним отгрузкам за {{ window }} мес.) или меньше минимального остатка из карточки изделия. «Заказать» — до запаса на {{ target }} мес., кратно коробке.</p></div>
+  <div class="actions"><a class="btn" href="?format=xlsx">{% icon "file-spreadsheet" %}В Excel</a><a class="btn primary" href="{% url 'sales:china_order' %}">{% icon "ship" %}Заказ в Китай</a></div></div>
+<div class="table-wrap">
+<table class="products">
+  <thead><tr><th>Изделие</th><th class="num">На складе</th><th class="num">В пути</th><th class="num">Резерв</th><th class="num">Доступно</th><th class="num">Отгрузки в мес.</th><th>Хватит</th><th class="num">Заказать</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td class="code"><a href="{{ r.product.get_absolute_url }}">{{ r.product.code }}</a> <span class="muted small">{{ r.product.customer|default:"" }}</span></td>
+      <td data-label="На складе" class="num">{{ r.on_hand }}</td>
+      <td data-label="В пути" class="num">{{ r.in_transit|default:"—" }}</td>
+      <td data-label="Резерв" class="num">{{ r.reserved|default:"—" }}</td>
+      <td data-label="Доступно" class="num strong">{{ r.available }}</td>
+      <td data-label="В месяц" class="num">{{ r.avg }}</td>
+      <td data-label="Хватит"><span class="badge {% if r.level == 'bad' %}badge-drawing_pending{% else %}badge-sample{% endif %}">{% if r.months is not None %}{{ r.months }} мес{% else %}ниже минимума {{ r.min_stock }}{% endif %}</span></td>
+      <td data-label="Заказать" class="num strong">{{ r.suggested }}{% if r.carton %} <span class="muted small">по {{ r.carton }}</span>{% endif %}</td>
+    </tr>
+  {% empty %}<tr><td colspan="8" class="empty">{% icon "check" %} Всего хватает.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

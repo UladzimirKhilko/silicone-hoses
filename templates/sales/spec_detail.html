@@ -11,9 +11,9 @@
       {% if spec.valid_until %} до {{ spec.valid_until|date:"d.m.Y" }}{% endif %}</p>
   </div>
   <div class="actions">
-    {% if spec.file %}<a class="btn" href="{% url 'sales:spec_file' spec.pk %}" target="_blank">Скан</a>{% endif %}
-    <a class="btn" href="{% url 'sales:spec_edit' spec.pk %}">Изменить</a>
-    <a class="btn" href="{% url 'sales:spec_create' spec.contract.pk %}?copy={{ spec.pk }}" title="Новая спецификация с теми же изделиями и ценами">Копировать в новую</a>
+    {% if spec.file %}<a class="btn" href="{% url 'sales:spec_file' spec.pk %}" target="_blank">{% icon "eye" %}Скан</a>{% endif %}
+    <a class="btn" href="?format=xlsx">{% icon "file-spreadsheet" %}В Excel</a><a class="btn" href="{% url 'sales:spec_edit' spec.pk %}">{% icon "pencil" %}Изменить</a>
+    <a class="btn" href="{% url 'sales:spec_create' spec.contract.pk %}?copy={{ spec.pk }}" title="Новая спецификация с теми же изделиями и ценами">{% icon "copy" %}Копировать в новую</a>
     <form method="post" action="{% url 'sales:spec_toggle_closed' spec.pk %}" class="inline">{% csrf_token %}<button class="btn ghost">{% if spec.closed %}Открыть снова{% else %}Закрыть{% endif %}</button></form>
     <form method="post" action="{% url 'sales:spec_delete' spec.pk %}" class="inline" onsubmit="return confirm('Удалить спецификацию?')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
   </div>

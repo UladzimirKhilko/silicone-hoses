@@ -4,7 +4,7 @@
 <p><a href="{% if req %}{{ req.get_absolute_url }}{% else %}{% url 'sales:request_list' %}{% endif %}">← Назад</a></p>
 <h1>{% if req %}Изменить {{ req }}{% else %}Новая заявка{% endif %}</h1>
 <form method="post" enctype="multipart/form-data" class="card form">{% csrf_token %}
-  <div class="grid2">{% for f in form %}<p>{{ f.label_tag }} {{ f }}{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}</div>
+  {% include "_fields.html" %}
   {% include "sales/_paste.html" with paste_hint="затем количество" %}
   <h2>Изделия</h2>
   {% include "stock/_lines.html" with lines_note="Пустые строки не учитываются. Не хватает строк — сохраните и нажмите «Изменить»: добавятся ещё пустые." %}

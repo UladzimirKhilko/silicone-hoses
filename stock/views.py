@@ -71,6 +71,18 @@ def batch_list(request):
         .prefetch_related("lines")
         .order_by(F("received_date").desc(nulls_first=True), "-created_at")
     )
+    if request.GET.get("format") == "xlsx":
+        from reports import excel
+
+        costs = pricing.can_see_costs(request.user)
+        lines = ReceiptLine.objects.select_related("batch", "product__customer").order_by(
+            F("batch__received_date").desc(nulls_first=True), "batch_id", "product__code")
+        rows = [[l.batch.invoice, l.batch.short_label, l.batch.get_status_display(), l.batch.received_date, l.product.code,
+                 l.product.yapib, str(l.product.customer or ""), l.qty_expected, l.qty_received, l.price_cny]
+                + ([l.landed_price_byn] if costs else []) for l in lines]
+        return excel.table("Приходы", ["Инвойс", "Партия", "Статус", "Дата приёмки", "Изделие", "ЯПИБ", "Заказчик", "По документам",
+                                       "Принято", "Цена завода, CNY"] + (["Учётная цена, BYN"] if costs else []),
+                           rows, f"Приходы {dt.date.today():%Y-%m-%d}.xlsx")
     return render(request, "stock/batch_list.html", {"batches": batches})
 
 
@@ -351,6 +363,19 @@ def shipment_list(request):
         except ValueError:
             y, m = dt.date.today().year, dt.date.today().month
         shipments = shipments.filter(date__year=y, date__month=m)
+    if request.GET.get("format") == "xlsx":
+        from reports import excel
+
+        costs = pricing.can_see_costs(request.user)
+        lines = ShipmentLine.objects.filter(shipment__in=shipments).select_related(
+            "shipment__customer", "shipment__request", "product", "batch", "spec_line__spec").order_by("shipment__date", "shipment_id", "product__code")
+        lines = pricing.with_costs(lines) if costs else list(lines)
+        rows = [[l.shipment.date, l.shipment.customer.name, l.shipment.ttn_number, l.product.code, l.product.yapib, l.batch.short_label,
+                 l.qty, l.price_byn, l.amount, f"№ {l.spec_line.spec.number}" if l.spec_line else "", str(l.shipment.request or "")]
+                + ([l.unit_cost, l.profit] if costs else []) for l in lines]
+        return excel.table("Отгрузки", ["Дата", "Заказчик", "ТТН", "Изделие", "ЯПИБ", "Партия", "Шт", "Цена без НДС", "Сумма",
+                                        "Спецификация", "Заявка"] + (["Учётная цена", "Прибыль"] if costs else []),
+                           rows, f"Отгрузки {dt.date.today():%Y-%m-%d}.xlsx")
     shipments = list(shipments)
     lines = ShipmentLine.objects.filter(shipment__in=shipments)
     lines = pricing.with_costs(lines) if pricing.can_see_costs(request.user) else list(lines)
@@ -489,6 +514,16 @@ def shipment_delete(request, pk):
 @login_required
 def adjustment_list(request):
     items = Adjustment.objects.select_related("customer").annotate(qty=Sum("lines__qty")).order_by("-date", "-created_at")
+    if request.GET.get("format") == "xlsx":
+        from reports import excel
+
+        from .models import AdjustmentLine
+
+        lines = AdjustmentLine.objects.select_related("adjustment__customer", "product", "batch").order_by("-adjustment__date")
+        rows = [[l.adjustment.date, l.adjustment.get_kind_display(), str(l.adjustment.customer or ""), l.product.code, l.batch.short_label,
+                 l.adjustment.sign * l.qty, l.adjustment.notes] for l in lines]
+        return excel.table("Списания", ["Дата", "Причина", "Заказчик", "Изделие", "Партия", "Шт (+/−)", "Комментарий"],
+                           rows, f"Списания {dt.date.today():%Y-%m-%d}.xlsx")
     return render(request, "stock/adjustment_list.html", {"items": items})
 
 

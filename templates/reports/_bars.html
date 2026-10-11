@@ -1,0 +1,12 @@
+<svg class="chart" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ aria|default:'График по месяцам' }}">
+  <g class="grid">{% for g in chart.grid %}<line x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ g.y|floatformat:'1u' }}" y2="{{ g.y|floatformat:'1u' }}"></line>{% endfor %}</g>
+  <g class="axis">{% for g in chart.grid %}<text x="{{ chart.left|add:'-8' }}" y="{{ g.y|floatformat:'1u' }}" dy="4" text-anchor="end">{{ g.label }}</text>{% endfor %}</g>
+  {% for b in chart.bars %}
+  <g class="bar" data-tip="{{ b.tip }}">
+    <rect class="hit" x="{{ b.hit_x|floatformat:'1u' }}" y="{{ chart.plot_top }}" width="{{ b.hit_w|floatformat:'1u' }}" height="{{ chart.plot_h|floatformat:'1u' }}"></rect>
+    {% if b.path %}<path class="mark" d="{{ b.path }}" style="fill: var(--series-1)"></path>{% endif %}
+    {% if b.show_value %}<text class="val" x="{{ b.cx|floatformat:'1u' }}" y="{{ b.y|floatformat:'1u' }}" dy="-6" text-anchor="middle">{{ b.value }}</text>{% endif %}
+    <text class="lbl" x="{{ b.cx|floatformat:'1u' }}" y="{{ chart.label_y }}" text-anchor="middle">{{ b.label }}{% if b.year %} {{ b.year|stringformat:"d"|slice:"2:" }}{% endif %}</text>
+  </g>
+  {% endfor %}
+</svg>

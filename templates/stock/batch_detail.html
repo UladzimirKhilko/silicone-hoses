@@ -14,8 +14,8 @@
     </p>
   </div>
   <div class="actions">
-    {% if not batch.is_received %}<a class="btn" href="{% url 'stock:batch_edit' batch.pk %}">Изменить</a>{% endif %}
-    <form method="post" action="{% url 'stock:batch_delete' batch.pk %}" class="inline" onsubmit="return confirm('Удалить партию?')">{% csrf_token %}<button class="btn ghost">Удалить</button></form>
+    {% if not batch.is_received %}<a class="btn" href="{% url 'stock:batch_edit' batch.pk %}">{% icon "pencil" %}Изменить</a>{% endif %}
+    <form method="post" action="{% url 'stock:batch_delete' batch.pk %}" class="inline" onsubmit="return confirm('Удалить партию?')">{% csrf_token %}<button class="btn ghost danger">{% icon "trash-2" %}Удалить</button></form>
   </div>
 </div>
 {% if batch.notes %}<p class="note">{{ batch.notes|linebreaksbr }}</p>{% endif %}
@@ -55,8 +55,8 @@
   <div class="card receive" id="receive">
     <h2>Приёмка на складе</h2>
     <p class="muted small">Проверьте фактическое количество по каждой строке. Меньше, чем по документам — недостача будет видна в партии.</p>
-    {{ receive_form.received_date.label_tag }} {{ receive_form.received_date }}
-    <button class="btn primary">Принять на склад</button>
+    <label class="check-label">Дата приёмки {{ receive_form.received_date }}</label>
+    <button class="btn primary">{% icon "check" %}Принять на склад</button>
   </div>
 {% endif %}
 </form>
@@ -68,7 +68,7 @@
   <div class="batch-info">
     <label>Курс, BYN за 1 CNY <input name="cny_rate" value="{{ batch.cny_rate|default_if_none:'' }}" inputmode="decimal" placeholder="0,4512"></label>
     <label>Расходы на партию, BYN <input name="extra_costs_byn" value="{{ batch.extra_costs_byn|default_if_none:'' }}" inputmode="decimal" placeholder="12 500"></label>
-    <button class="btn" name="action" value="calc" onclick="return ![...document.querySelectorAll('.prices input[name^=landed_]')].some(i => i.value) || confirm('Пересчитать все учётные цены партии? Введённые вручную будут заменены.')">Рассчитать от курса</button>
+    <button class="btn" name="action" value="calc" onclick="return ![...document.querySelectorAll('.prices input[name^=landed_]')].some(i => i.value) || confirm('Пересчитать все учётные цены партии? Введённые вручную будут заменены.')">{% icon "wallet" %}Рассчитать от курса</button>
   </div>
   <div class="table-wrap"><table class="mini">
     <thead><tr><th>Изделие</th><th class="num">Шт</th><th class="num">Цена завода, CNY</th><th class="num">Сумма, CNY</th><th class="num">Учётная, BYN/шт</th><th class="num">Последняя цена продажи</th><th class="num">Прибыль со шт</th></tr></thead>

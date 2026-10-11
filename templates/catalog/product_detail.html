@@ -8,7 +8,7 @@
     <h1>{{ product.code }}</h1>
     <p class="muted">{% if product.yapib %}ЯПИБ {{ product.yapib }} · {% endif %}{{ product.customer|default:"заказчик не указан" }} · <span class="badge badge-{{ product.status }}">{{ product.get_status_display }}</span></p>
   </div>
-  <a class="btn" href="{% url 'catalog:product_edit' product.pk %}">Изменить</a>
+  <div class="actions"><a class="btn" href="?format=xlsx">{% icon "file-spreadsheet" %}Движение в Excel</a><a class="btn" href="{% url 'catalog:product_edit' product.pk %}">{% icon "pencil" %}Изменить</a></div>
 </div>
 
 <div class="detail">
@@ -18,8 +18,8 @@
         {% for f in files %}<a href="?file={{ f.kind }}" class="tab {% if f == current %}active{% endif %}">{{ f.get_kind_display }}</a>{% endfor %}
       </div>
       <div class="actions">
-        <a class="btn primary" href="{% url 'catalog:drawing_download' current.pk %}">Скачать</a>
-        <a class="btn" href="{% url 'catalog:drawing_view' current.pk %}" target="_blank" rel="noopener">Открыть PDF</a>
+        <a class="btn primary" href="{% url 'catalog:drawing_download' current.pk %}">{% icon "download" %}Скачать</a>
+        <a class="btn" href="{% url 'catalog:drawing_view' current.pk %}" target="_blank" rel="noopener">{% icon "eye" %}Открыть PDF</a>
       </div>
       {% if current.preview %}
         <a href="{% url 'catalog:drawing_preview' current.pk %}" target="_blank" rel="noopener" title="Открыть крупно">
@@ -34,7 +34,7 @@
     <details class="upload">
       <summary>Загрузить / заменить файл чертежа</summary>
       <form method="post" enctype="multipart/form-data" action="{% url 'catalog:drawing_upload' product.pk %}">{% csrf_token %}
-        {{ upload_form.as_p }}<button class="btn">Загрузить</button>
+        {% include "_fields.html" with form=upload_form %}<button class="btn primary">{% icon "upload" %}Загрузить</button>
       </form>
     </details>
   </section>
