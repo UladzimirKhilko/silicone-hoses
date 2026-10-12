@@ -16,7 +16,7 @@ from catalog.models import Customer, Product
 from catalog.views import file_response, search_products
 
 from . import paperwork, pricing, receipt_import, services
-from .importers import ParseError, parse_invoice, parse_packing_list, read_rows
+from .importers import ParseError, parse_document, read_rows
 from .forms import (
     AdjustmentForm,
     CartonForm,
@@ -218,25 +218,50 @@ def batch_edit(request, pk=None):
 IMPORT_SESSION_KEY = "receipt_import_draft"
 
 
+def _read_factory_files(files):
+    """Разобрать файлы завода (любые имена, Excel или PDF): что инвойс, что упаковочный лист — по содержимому.
+
+    Возвращает (инвойс, упаковочный лист, заметки) или бросает ParseError с понятным текстом.
+    """
+    invoices, packings, notes = [], [], []
+    for f in files:
+        try:
+            kind, doc = parse_document(read_rows(f, f.name))
+        except ParseError as e:
+            raise ParseError(f"«{f.name}»: {e}")
+        except Exception:  # битый или чужой файл — не падаем с 500, а объясняем
+            raise ParseError(f"«{f.name}»: не удалось прочитать файл. Нужен Excel (.xlsx, .xls) или PDF с таблицей.")
+        (invoices if kind == "invoice" else packings).append((f.name, doc))
+    if len(invoices) > 1:
+        raise ParseError("Загружено несколько инвойсов: " + ", ".join(n for n, _ in invoices) + ". Нужен один инвойс на поставку.")
+    chinese = [(n, d) for n, d in packings if d.source == "cn"]
+    if len(chinese) > 1 or (not chinese and len(packings) > 1):
+        raise ParseError("Загружено несколько упаковочных листов: " + ", ".join(n for n, _ in packings) + ".")
+    packing = (chinese or packings or [(None, None)])[0]
+    for n, d in packings:
+        if packing[1] is not d:
+            notes.append(f"«{n}» — русский упаковочный лист; коробки и вес взяты из китайского «{packing[0]}».")
+    for name, kind in ([(invoices[0][0], "инвойс")] if invoices else []) + ([(packing[0], "упаковочный лист")] if packing[1] else []):
+        notes.append(f"«{name}» — {kind}.")
+    return (invoices[0][1] if invoices else None), packing[1], notes
+
+
 @login_required
 def batch_import(request):
-    """Шаг 1: загрузить инвойс и/или упаковочный лист завода."""
+    """Шаг 1: загрузить файлы завода — инвойс и/или упаковочный лист, Excel или PDF, с любыми именами."""
     if request.method == "POST":
-        invoice_file, pl_file = request.FILES.get("invoice"), request.FILES.get("packing_list")
-        if not invoice_file and not pl_file:
-            messages.error(request, "Выберите инвойс и/или упаковочный лист завода.")
+        files = request.FILES.getlist("files") + [f for f in (request.FILES.get("invoice"), request.FILES.get("packing_list")) if f]
+        if not files:
+            messages.error(request, "Выберите файлы завода: инвойс и/или упаковочный лист (Excel или PDF).")
             return redirect("stock:batch_import")
         try:
-            invoice = parse_invoice(read_rows(invoice_file, invoice_file.name)) if invoice_file else None
-            packing = parse_packing_list(read_rows(pl_file, pl_file.name)) if pl_file else None
+            invoice, packing, notes = _read_factory_files(files)
         except ParseError as e:
             messages.error(request, str(e))
             return redirect("stock:batch_import")
-        except Exception:  # битый или чужой файл — не падаем с 500, а объясняем
-            messages.error(request, "Не удалось прочитать файл. Нужен Excel (.xlsx или .xls) — инвойс или упаковочный лист завода.")
-            return redirect("stock:batch_import")
         draft = receipt_import.build_draft(invoice, packing)
-        draft["files"] = [f.name for f in (invoice_file, pl_file) if f]
+        draft["files"] = [f.name for f in files]
+        draft["notes"] = notes
         request.session[IMPORT_SESSION_KEY] = draft
         return redirect("stock:batch_import_preview")
     return render(request, "stock/batch_import.html")

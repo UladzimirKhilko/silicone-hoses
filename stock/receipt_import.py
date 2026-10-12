@@ -88,7 +88,7 @@ def build_draft(invoice=None, packing=None):
     if packing:
         header.update(pl_invoice=packing.invoice, total_cartons=packing.total_cartons, total_qty=packing.total_qty,
                       total_gross=str(packing.total_gross or ""), total_net=str(packing.total_net or ""),
-                      mixed=[(mark, items) for mark, items in packing.mixed_cartons])
+                      mixed=[(mark, items) for mark, items in packing.mixed_cartons], pl_source=packing.source)
         header.setdefault("invoice", packing.invoice)
     return {"header": header, "rows": [asdict(r) for r in rows]}
 
@@ -150,6 +150,9 @@ def draft_warnings(draft, rows=None):
             warnings.append(f"{r.pl_name}: есть в упаковочном листе, нет в инвойсе.")
         elif r.qty_pl is None and h.get("total_qty"):
             warnings.append(f"{r.invoice_name}: есть в инвойсе, нет в упаковочном листе.")
+    if h.get("pl_source") == "ru":
+        warnings.append("Загружен русский упаковочный лист: в нём нет раскладки по коробкам — коробки для бирок взяты "
+                        "только там, где штуки делятся на коробки поровну. Для точных бирок загрузите китайский Packing List.")
     if h.get("total_qty") is not None:
         listed = sum(r.qty_pl or 0 for r in rows)
         if listed != h["total_qty"]:

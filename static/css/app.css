@@ -469,3 +469,17 @@ input[type=file] { border-style: dashed; background: var(--surface-2); }
 tr.sub-row td { font-size: 13px; color: var(--text-2); background: var(--surface-2); }
 tr.sub-row td.code { font-weight: 500; padding-left: 28px; }
 .products.compact th, .products.compact td { padding: 10px 9px; } .products.compact th { letter-spacing: .02em; font-size: 11px; white-space: normal; }
+
+/* --- Загрузка файлов завода --- */
+.dropzone { position: relative; display: grid; justify-items: center; gap: 6px; padding: 34px 20px; border: 2px dashed var(--line-strong); border-radius: 12px;
+  background: var(--surface-2); text-align: center; cursor: pointer; transition: border-color .12s, background .12s; color: var(--text); }
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.dropzone-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.dropzone-icon .i { width: 24px; height: 24px; }
+.file-list { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; font-size: 13px; }
+.file-list li { background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; }
+.hints { margin: 14px 0; padding-left: 18px; }
+.import-table td:first-child { max-width: 200px; font-size: 13px; }
+.import-table td:last-child { min-width: 120px; font-size: 12.5px; }
+.import-table select { min-width: 220px; }

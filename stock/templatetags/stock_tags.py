@@ -36,3 +36,11 @@ def price(value):
 @register.filter
 def pct(value):
     return "—" if value is None else f"{value:.1f}".replace(".", ",") + " %"
+
+
+@register.filter
+def short_name(value):
+    """«Патрубок силиконовый BSI 90-60» → «BSI 90-60» (для узких таблиц; полное название — в подсказке)."""
+    import re
+
+    return re.sub(r"^\s*патрубок\s+силиконовый\s+", "", str(value or ""), flags=re.IGNORECASE)

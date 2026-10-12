@@ -25,10 +25,14 @@ class ParseError(Exception):
 # --- Чтение таблиц ---
 
 def read_rows(file, name=""):
-    """Первый лист .xlsx/.xls → список строк (списки значений)."""
-    suffix = Path(name or getattr(file, "name", "")).suffix.lower()
+    """Первый лист .xlsx/.xls или таблицы PDF → список строк (списки значений).
+
+    Тип файла определяется по содержимому, а не по имени: имя может быть любым.
+    """
     data = file.read() if hasattr(file, "read") else Path(file).read_bytes()
-    if suffix == ".xls" or data[:4] == b"\xd0\xcf\x11\xe0":  # старый формат Excel
+    if data[:5] == b"%PDF-":
+        return _pdf_rows(data)
+    if data[:4] == b"\xd0\xcf\x11\xe0":  # старый формат Excel (.xls)
         import xlrd
 
         sheet = xlrd.open_workbook(file_contents=data).sheet_by_index(0)
@@ -37,8 +41,31 @@ def read_rows(file, name=""):
 
     import openpyxl
 
+    if data[:2] != b"PK":
+        raise ParseError("Файл не похож на Excel (.xlsx, .xls) или PDF.")
     ws = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True).worksheets[0]
     return [list(row) for row in ws.iter_rows(values_only=True)]
+
+
+def _pdf_rows(data):
+    """Таблицы всех страниц PDF подряд (продолжение таблицы на следующей странице — тоже).
+
+    Читается PDF с текстом (выгруженный из Excel/программы). Скан-картинку прочитать нельзя.
+    """
+    import pymupdf
+
+    doc = pymupdf.open(stream=data, filetype="pdf")
+    rows, text = [], ""
+    for page in doc:
+        text += page.get_text()
+        for table in page.find_tables().tables:
+            rows.extend(table.extract())
+    if not text.strip():
+        raise ParseError("PDF — это скан (картинка без текста), прочитать его нельзя. "
+                         "Попросите у завода Excel или PDF, сохранённый из Excel.")
+    if not rows:
+        raise ParseError("В PDF не нашлось таблицы. Нужен инвойс или упаковочный лист с таблицей позиций.")
+    return rows
 
 
 def _text(v):
@@ -54,23 +81,36 @@ def _num(v):
         return Decimal(repr(round(v, 10))).normalize() if v != int(v) else Decimal(int(v))
     if isinstance(v, int):
         return Decimal(v)
+    text = re.sub(r"[\s\u00a0]", "", str(v))
+    text = re.sub(r"^(?:[¥￥$€]|CNY|RMB|USD|BYN)|(?:[¥￥$€]|CNY|RMB|USD|BYN)$", "", text, flags=re.IGNORECASE)
+    if re.fullmatch(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?", text):  # 1,334.95 и 1,500 — запятая-разделитель тысяч (документы завода)
+        text = text.replace(",", "")
+    elif not re.fullmatch(r"-?\d+(?:[.,]\d+)?", text):
+        return None
     try:
-        return Decimal(str(v).replace(",", ".").replace(" ", ""))
+        return Decimal(text.replace(",", "."))
     except InvalidOperation:
         return None
 
 
-def _find_header(rows, must, limit=30):
+def _key(text):
+    return re.sub(r"\s+", "", str(text).lower())
+
+
+def _find_header(rows, must, limit=40, without=()):
+    """Строка заголовков: в ней есть хотя бы одно слово из каждой группы `must` и нет слов `without`.
+    Пробелы и переносы строк в заголовках не важны («QTY/\nCTN» = «qty/ctn»)."""
     for i, row in enumerate(rows[:limit]):
-        cells = [_text(c).lower() for c in row]
-        if all(any(word in c for c in cells) for word in must):
+        cells = [_key(_text(c)) for c in row]
+        if all(any(_key(w) in c for c in cells for w in (group if isinstance(group, tuple) else (group,))) for group in must) \
+                and not any(_key(w) in c for c in cells for w in without):
             return i, cells
     return None, None
 
 
 def _col(cells, *words, exclude=()):
     for i, c in enumerate(cells):
-        if any(w in c for w in words) and not any(x in c for x in exclude):
+        if any(_key(w) in c for w in words) and not any(_key(x) in c for x in exclude):
             return i
     return None
 
@@ -108,30 +148,41 @@ def _parse_date(text):
     return None
 
 
+NAME_WORDS = ("наименование", "description", "commodity", "goods", "品名", "名称")
+QTY_WORDS = ("к-во", "к-в", "кол-во", "количество", "quantity", "qty", "数量")
+PRICE_WORDS = ("цена", "unitprice", "price", "单价")
+AMOUNT_WORDS = ("сумма", "amount", "totalvalue", "金额")
+
+
 def parse_invoice(rows):
-    head, cells = _find_header(rows, ["наименование"])
+    head, cells = _find_header(rows, [NAME_WORDS, QTY_WORDS, PRICE_WORDS], without=("qty/ctn",))
     if head is None:
-        raise ParseError("Не нашёл в файле таблицу с колонкой «Наименование» — это точно инвойс?")
-    c_name = _col(cells, "наименование")
-    c_qty = _col(cells, "к-во", "кол-во", "количество", "qty")
-    c_price = _col(cells, "цена", "price")
-    c_amount = _col(cells, "сумма", "amount")
-    c_hs = _col(cells, "тнвэд", "тн вэд", "hs")
+        raise ParseError("Не нашёл в файле таблицу с колонками «Наименование», «Кол-во», «Цена» — это точно инвойс?")
+    c_name = _col(cells, *NAME_WORDS)
+    c_qty = _col(cells, *QTY_WORDS)
+    c_price = _col(cells, *PRICE_WORDS)
+    c_amount = _col(cells, *AMOUNT_WORDS)
+    c_hs = _col(cells, "тнвэд", "тн вэд", "hscode", "hs")
     inv = Invoice()
     header_text = " ".join(_text(c) for row in rows[:head] for c in row)
-    if m := re.search(r"Инвойс\s*№\.?\s*([A-Za-z0-9\-/]+)", header_text, re.IGNORECASE):
+    if m := re.search(r"(?:Инвойс|Invoice)\s*(?:№|No\.?|Nr\.?|#)?\s*[.:]?\s*([A-Za-z]{1,4}\d{5,}[A-Za-z0-9\-/]*)", header_text, re.IGNORECASE):
         inv.number = m.group(1)
-    if m := re.search(r"Дата:?\s*([\d./\-]{8,10})", header_text):
+    elif m := re.search(r"\b([A-Z]{2}\d{6,})\b", header_text):
+        inv.number = m.group(1)
+    if m := re.search(r"(?:Дата|Date)\s*:?\s*([\d./\-]{8,10})", header_text, re.IGNORECASE):
         inv.date = _parse_date(m.group(1))
     if m := re.search(r"к договору\s*([\w/\-]+\s*от\s*[\d.]+)", header_text, re.IGNORECASE):
         inv.contract = m.group(1)
-    if m := re.search(r"\((CNY|USD|EUR)\)", " ".join(cells), re.IGNORECASE):
-        inv.currency = m.group(1).upper()
+    if m := re.search(r"\((CNY|USD|EUR|RMB)\)", " ".join(cells), re.IGNORECASE):
+        inv.currency = m.group(1).upper().replace("RMB", "CNY")
+    elif re.search(r"[¥￥]", " ".join(_text(c) for row in rows[head:head + 5] for c in row)):
+        inv.currency = "CNY"
     for row in rows[head + 1:]:
         name = _text(row[c_name]) if c_name is not None and c_name < len(row) else ""
         qty = _num(row[c_qty]) if c_qty is not None and c_qty < len(row) else None
-        if not name or qty is None or name.lower().startswith("итого"):
-            if inv.lines and name.lower().startswith("итого"):
+        total_row = name.lower().startswith(("итого", "total", "всего"))
+        if not name or qty is None or total_row:
+            if inv.lines and total_row:
                 break
             continue
         inv.lines.append(InvoiceLine(
@@ -176,17 +227,20 @@ class PackingList:
     total_gross: Decimal | None = None
     total_net: Decimal | None = None
     mixed_cartons: list = field(default_factory=list)  # [(маркировка, [(name, qty)])]
+    source: str = "cn"  # cn — китайский лист (раскладка по коробкам), ru — русский (итоги по изделию)
 
 
 def parse_packing_list(rows):
     head, cells = _find_header(rows, ["model", "qty/ctn"])
     if head is None:
+        if _find_header(rows, [NAME_WORDS, ("упаковка", "g.w", "брутто")], without=PRICE_WORDS)[0] is not None:
+            return parse_packing_list_ru(rows)
         raise ParseError("Не нашёл заголовков упаковочного листа завода (matched models, QTY/CTN).")
     c_mark = _col(cells, "item on the carton", "item")
     c_model = _col(cells, "model")
     c_color = _col(cells, "color")
     c_qty = _col(cells, "qty/ctn")
-    c_ctn = _col(cells, "cartons")
+    c_ctn = _col(cells, "cartons", exclude=("size", "no."))
     c_nw = _col(cells, "n.w/ctn")
     c_gw = _col(cells, "g.w/ctn")
     c_total = _col(cells, "total qty")
@@ -201,7 +255,16 @@ def parse_packing_list(rows):
         return row[col] if col is not None and col < len(row) else None
 
     carton_specs = defaultdict(lambda: defaultdict(Counter))  # name -> шт./коробку -> {(брутто, нетто): коробок}
-    group = None
+    # Смешанная коробка (образцы): одна строка с маркировкой, весом и общим количеством T, остальные —
+    # только модель и штуки. В Excel эта строка первая; в PDF объединённые ячейки печатаются посередине
+    # группы — поэтому строки без коробок «ждут» (pending) и состав группы добирается до суммы T.
+    group, need, pending = None, 0, []
+
+    def add_mixed(model, n):
+        item = pl.items.setdefault(model, PackingItem(name=model))
+        item.qty += n
+        item.in_mixed += n
+
     for row in rows[head + 1:]:
         model = _text(get(row, c_model))
         if not model:
@@ -209,30 +272,39 @@ def parse_packing_list(rows):
             if total_ctn and total_qty and pl.total_cartons is None:  # строка итогов
                 pl.total_cartons, pl.total_qty = int(total_ctn), int(total_qty)
                 pl.total_gross, pl.total_net = _num(get(row, c_tgw)), _num(get(row, c_tnw))
-            group = None
             continue
         qty, cartons, total = _num(get(row, c_qty)), _num(get(row, c_ctn)), _num(get(row, c_total))
+        if qty is None and cartons is None and total is None:  # заголовок, повторённый на новой странице PDF
+            continue
         item = pl.items.setdefault(model, PackingItem(name=model))
         if _text(get(row, c_color)):
             item.color = item.color or _text(get(row, c_color))
-        if cartons is None and group is not None:  # продолжение смешанной коробки
+        if cartons is None:  # строка смешанной коробки без своих данных
             n = int(qty or 0)
-            item.qty += n
-            item.in_mixed += n
-            group[1].append((model, n))
+            if group is not None and need > 0:
+                group[1].append((model, n))
+                add_mixed(model, n)
+                need -= n
+            else:
+                pending.append((model, n))
             continue
-        if cartons and qty and total is not None and total != qty * cartons:  # начало смешанной коробки
-            group = (_text(get(row, c_mark)), [(model, int(qty))])
+        if qty and total is not None and total != qty * cartons:  # строка с данными смешанной коробки
+            members = pending + [(model, int(qty))]
+            pending = []
+            group = (_text(get(row, c_mark)), members)
             pl.mixed_cartons.append(group)
-            item.qty += int(qty)
-            item.in_mixed += int(qty)
+            for m, n in members:
+                add_mixed(m, n)
+            need = int(total) - sum(n for _, n in members)
             continue
-        group = None
-        if not (qty and cartons):
+        group, need = None, 0
+        if not qty:
             continue
         item.mark = item.mark or _text(get(row, c_mark))
         item.qty += int(qty * cartons)
         carton_specs[model][int(qty)][(_num(get(row, c_gw)), _num(get(row, c_nw)))] += int(cartons)
+    for model, n in pending:  # без коробки — штуки всё равно учитываем (в смешанной коробке)
+        add_mixed(model, n)
     for name, sizes in carton_specs.items():
         result = []
         for q, weights in sorted(sizes.items()):
@@ -243,3 +315,79 @@ def parse_packing_list(rows):
     if not pl.items:
         raise ParseError("В упаковочном листе не нашлось строк с изделиями.")
     return pl
+
+
+def parse_packing_list_ru(rows):
+    """Русский упаковочный лист завода: по изделию — всего штук, коробок и общий вес.
+
+    Раскладки по коробкам в нём нет: размер коробки берём, только если штуки делятся на коробки
+    поровну (иначе коробки — из китайского упаковочного листа). Строки без коробок после строки
+    с коробкой — одна смешанная коробка (образцы), как в китайском листе.
+    """
+    head, cells = _find_header(rows, [NAME_WORDS, ("упаковка", "g.w", "брутто")], without=PRICE_WORDS)
+    c_name = _col(cells, *NAME_WORDS)
+    c_qty = _col(cells, *QTY_WORDS)
+    c_ctn = _col(cells, "упаковка", "коробок", "мест", "cartons", "ctns")
+    c_gw = _col(cells, "g.w", "брутто")
+    c_nw = _col(cells, "n.w", "нетто")
+    if c_qty is None:
+        raise ParseError("В упаковочном листе не нашлось колонки с количеством.")
+
+    def get(row, col):
+        return row[col] if col is not None and col < len(row) else None
+
+    header_text = " ".join(_text(c) for row in rows[:head] for c in row)
+    pl = PackingList(title=" ".join(_text(c) for c in rows[head - 1] if _text(c)) if head else "", source="ru")
+    if m := re.search(r"\b([A-Z]{2}\d{6,})\b", header_text):
+        pl.invoice = m.group(1)
+    group = None
+    for row in rows[head + 1:]:
+        name = _text(get(row, c_name))
+        qty, cartons = _num(get(row, c_qty)), _num(get(row, c_ctn))
+        first = " ".join(_text(c) for c in row[:max(c_name or 0, 1) + 1]).lower()
+        if first.startswith(("общий итог", "итого", "total", "всего")):
+            if qty and pl.total_qty is None:
+                pl.total_qty, pl.total_cartons = int(qty), int(cartons) if cartons else None
+                pl.total_gross, pl.total_net = _num(get(row, c_gw)), _num(get(row, c_nw))
+            continue
+        if not name or name.lower().startswith(("общий", "итого")):
+            continue
+        if qty is None:
+            continue
+        item = pl.items.setdefault(name, PackingItem(name=name))
+        item.qty += int(qty)
+        if cartons is None and group is not None:  # в той же коробке, что строка выше
+            item.in_mixed += int(qty)
+            group[1].append((name, int(qty)))
+            if len(group[1]) == 2:  # первая строка группы тоже оказалась в смешанной коробке
+                first = pl.items[group[1][0][0]]
+                first.in_mixed += group[1][0][1]
+                first.cartons = [c for c in first.cartons if c is not group[2]]
+                pl.mixed_cartons.append(group)
+            continue
+        group = None
+        if cartons:
+            gw, nw = _num(get(row, c_gw)), _num(get(row, c_nw))
+            per = Decimal(int(qty)) / cartons
+            spec = None
+            if per == int(per):
+                spec = PackingCarton(int(per), int(cartons), (gw / cartons).quantize(Decimal("0.01")) if gw else None,
+                                     (nw / cartons).quantize(Decimal("0.01")) if nw else None)
+                item.cartons.append(spec)
+            group = ("", [(name, int(qty))], spec)
+    pl.mixed_cartons = [(mark, members) for mark, members, _ in pl.mixed_cartons]
+    if not pl.items:
+        raise ParseError("В упаковочном листе не нашлось строк с изделиями.")
+    return pl
+
+
+def parse_document(rows):
+    """Что за документ: ("invoice", Invoice) или ("packing", PackingList). Имя файла не важно."""
+    if _find_header(rows, ["model", "qty/ctn"])[0] is not None:
+        return "packing", parse_packing_list(rows)
+    if _find_header(rows, [NAME_WORDS, QTY_WORDS, PRICE_WORDS], without=("qty/ctn",))[0] is not None:
+        return "invoice", parse_invoice(rows)
+    if _find_header(rows, [NAME_WORDS, ("упаковка", "g.w", "брутто")], without=PRICE_WORDS)[0] is not None:
+        return "packing", parse_packing_list_ru(rows)
+    raise ParseError("Не похоже ни на инвойс (нет колонок «Наименование», «Кол-во», «Цена»), "
+                     "ни на упаковочный лист завода (нет «matched models», «QTY/CTN» или «Упаковка», «G.W»).")

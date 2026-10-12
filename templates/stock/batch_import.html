@@ -2,13 +2,40 @@
 {% block title %}Поставка из файлов — Патрубки BSI{% endblock %}
 {% block content %}
 <p><a href="{% url 'stock:batch_list' %}">← Приходы</a></p>
-<h1>Поставка из файлов завода</h1>
-<p class="muted">Загрузите инвойс и упаковочный лист завода — сервис разберёт позиции, найдёт изделия и сверит количества.
-  Перед созданием поставки вы всё проверите.</p>
-<form method="post" enctype="multipart/form-data" class="card form import-form">{% csrf_token %}
-  <p><label>Инвойс (русский, Excel)</label><input type="file" name="invoice" accept=".xlsx,.xls"></p>
-  <p><label>Упаковочный лист завода (Packing List, Excel .xls/.xlsx)</label><input type="file" name="packing_list" accept=".xlsx,.xls"></p>
-  <p class="muted small">Можно загрузить только один из файлов. Из упаковочного листа берутся коробки для бирок, из инвойса — цены.</p>
+<div class="head"><div><h1>Поставка из файлов завода</h1>
+<p class="muted">Загрузите инвойс и упаковочный лист завода — сервис сам поймёт, какой файл что, разберёт позиции,
+  найдёт изделия и сверит количества. Перед созданием поставки вы всё проверите.</p></div></div>
+<form method="post" enctype="multipart/form-data" class="card form import-form" id="import-form">{% csrf_token %}
+  <label class="dropzone" id="dropzone">
+    <input type="file" name="files" multiple accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="files-input">
+    <span class="dropzone-icon">{% icon "file-up" %}</span>
+    <b>Перетащите файлы сюда или нажмите, чтобы выбрать</b>
+    <span class="muted small">Excel (.xlsx, .xls) или PDF · имена файлов любые · можно сразу несколько</span>
+    <ul class="file-list" id="file-list"></ul>
+  </label>
+  <ul class="muted small hints">
+    <li><b>Инвойс</b> — цены и количество (русский или английский).</li>
+    <li><b>Упаковочный лист</b> — китайский Packing List (коробки и вес для бирок) или русский (итоги по изделиям).</li>
+    <li>Можно загрузить только один файл. PDF — тот, что сохранён из Excel или программы; скан-картинку прочитать нельзя.</li>
+  </ul>
   <button class="btn primary">{% icon "file-up" %}Разобрать файлы</button>
 </form>
+<script>
+(function () {
+  var zone = document.getElementById("dropzone"), input = document.getElementById("files-input"), list = document.getElementById("file-list");
+  function show() {
+    list.innerHTML = "";
+    Array.prototype.forEach.call(input.files, function (f) {
+      var li = document.createElement("li");
+      li.textContent = f.name + " · " + Math.max(1, Math.round(f.size / 1024)) + " КБ";
+      list.appendChild(li);
+    });
+    zone.classList.toggle("has-files", input.files.length > 0);
+  }
+  input.addEventListener("change", show);
+  ["dragenter", "dragover"].forEach(function (e) { zone.addEventListener(e, function (ev) { ev.preventDefault(); zone.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (e) { zone.addEventListener(e, function () { zone.classList.remove("over"); }); });
+  zone.addEventListener("drop", function (ev) { ev.preventDefault(); input.files = ev.dataTransfer.files; show(); });
+})();
+</script>
 {% endblock %}

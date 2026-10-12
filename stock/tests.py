@@ -427,7 +427,7 @@ def test_import_rejects_garbage_file(client_in):
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     resp = client_in.post(reverse("stock:batch_import"), {"invoice": SimpleUploadedFile("x.xlsx", b"not excel")}, follow=True)
-    assert "Не удалось прочитать файл" in resp.content.decode()
+    assert "не похож на Excel" in resp.content.decode()
 
 
 def test_import_replaces_in_transit_order(client_in, import_catalog):
@@ -445,3 +445,116 @@ def test_import_replaces_in_transit_order(client_in, import_catalog):
     order.refresh_from_db()
     assert Batch.objects.count() == 1 and order.invoice == "TS9000001" and order.factory_orders == "Q700"
     assert services.in_transit()[p75.pk] == 200 and order.lines.count() == 3
+
+
+# --- Файлы завода: любые имена, PDF, русский упаковочный лист ---
+
+def _pdf_from_rows(rows, name="file.pdf"):
+    """PDF с таблицей (как «Сохранить как PDF» из Excel) — для проверки чтения PDF."""
+    import pymupdf
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)
+    width = max(len(r) for r in rows)
+    col_w, row_h, x0, y0 = 780 / width, 18, 30, 30
+    for i, row in enumerate(rows):
+        for j in range(width):
+            rect = pymupdf.Rect(x0 + j * col_w, y0 + i * row_h, x0 + (j + 1) * col_w, y0 + (i + 1) * row_h)
+            page.draw_rect(rect, color=(0, 0, 0), width=0.5)
+            value = row[j] if j < len(row) else None
+            if value not in (None, ""):
+                text = str(value).replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
+                page.insert_htmlbox(rect + (1, 1, -1, -1), f'<span style="font-size:6px">{text}</span>')
+    data = doc.tobytes()
+    return SimpleUploadedFile(name, data, content_type="application/pdf")
+
+
+def test_detects_documents_by_content_any_names(client_in, import_catalog):
+    # имена «перепутаны» и не говорят ничего — сервис определяет документ по содержимому
+    files = [_xlsx(PL_ROWS), _xlsx(INVOICE_ROWS)]
+    files[0].name, files[1].name = "инвойс_мартовский.xlsx", "scan_0001.xlsx"
+    client_in.post(reverse("stock:batch_import"), {"files": files})
+    draft = client_in.session["receipt_import_draft"]
+    assert draft["header"]["invoice"] == "TS9000001" and draft["header"]["total_cartons"] == 4
+    assert any("scan_0001.xlsx» — инвойс" in n for n in draft["notes"])
+    assert any("инвойс_мартовский.xlsx» — упаковочный лист" in n for n in draft["notes"])
+
+
+def test_two_invoices_rejected(client_in, import_catalog):
+    resp = client_in.post(reverse("stock:batch_import"), {"files": [_xlsx(INVOICE_ROWS), _xlsx(INVOICE_ROWS)]}, follow=True)
+    assert "несколько инвойсов" in resp.content.decode()
+
+
+def test_number_formats():
+    from .importers import _num
+
+    assert _num("￥28.57") == Decimal("28.57") and _num("1,334.95") == Decimal("1334.95") and _num("16,0") == Decimal("16.0")
+    assert _num("1 500") == 1500 and _num("CNY 6.67") == Decimal("6.67") and _num("1--3") is None and _num("60x38x35") is None
+
+
+def test_pdf_invoice_and_packing_list():
+    from .importers import parse_document, read_rows
+
+    rows = [[c if not isinstance(c, float) else round(c, 2) for c in r] for r in INVOICE_ROWS]
+    kind, inv = parse_document(read_rows(_pdf_from_rows(rows)))
+    assert kind == "invoice" and inv.number == "TS9000001" and [line.qty for line in inv.lines] == [200, 5, 4]
+    assert inv.lines[0].price == Decimal("6.67")
+    kind, pl = parse_document(read_rows(_pdf_from_rows(PL_ROWS)))
+    assert kind == "packing" and pl.items["BSI D75L100-2"].qty == 200 and pl.total_cartons == 4
+
+
+def test_pdf_mixed_carton_data_in_middle_row():
+    """В PDF объединённые ячейки смешанной коробки печатаются посередине группы."""
+    from .importers import parse_packing_list
+
+    rows = [PL_ROWS[0], PL_ROWS[1],
+            [None, "BSI 60*1000", None, None, None, 1, None, None, None, None, None, None, None, None],
+            ["TS9000001-D", "BSI 89*1000", "blue", "105x30x20", 0.063, 1, 1, 6.3, 7.5, 3, 0.063, 6.3, 7.5, ""],
+            [None, "BSI 102*1000", None, None, None, 1, None, None, None, None, None, None, None, None],
+            ["75*100", "BSI D75L100-2", "blue", "60x38x35", 0.0798, 85, 2, 15, 16, 170, 0.16, 30, 32, "1-2"]]
+    pl = parse_packing_list(rows)
+    assert pl.mixed_cartons == [("TS9000001-D", [("BSI 60*1000", 1), ("BSI 89*1000", 1), ("BSI 102*1000", 1)])]
+    assert pl.items["BSI D75L100-2"].in_mixed == 0 and pl.items["BSI D75L100-2"].qty == 170
+
+
+def test_scanned_pdf_explained():
+    import pymupdf
+
+    from .importers import ParseError, read_rows
+
+    doc = pymupdf.open()
+    doc.new_page()
+    with pytest.raises(ParseError, match="скан"):
+        read_rows(io.BytesIO(doc.tobytes()))
+
+
+RU_PL_ROWS = [
+    ["QINGHE COUNTY TUSHUN AUTO PARTS CO.,LTD."],
+    ["Упаковочный лист"],
+    ["Инвойс №.Q700", "TS9000001", "Дата:", "2025-03-14"],
+    ["No.:", "Наименование (обозначение)", None, None, "К-вр\n(шт)", "Упаковка", "G.W\n(KGS)", "N.W\n(KGS)"],
+    [1, "Патрубок силиконовый BSI 90/60", None, None, 5, 1, 3, 2],
+    [2, "Патрубок силиконовый BSI D63L80-2", None, None, 4, None, None, None],
+    [3, "Патрубок силиконовый BSI D75L100-2", None, None, 200, 2, 32.0, 30.0],
+    ["Общий итог", None, None, None, 209, 3, 35, 32],
+]
+
+
+def test_russian_packing_list():
+    from .importers import parse_document
+
+    kind, pl = parse_document(RU_PL_ROWS)
+    assert kind == "packing" and pl.source == "ru" and pl.invoice == "TS9000001"
+    assert (pl.total_qty, pl.total_cartons) == (209, 3)
+    d75 = pl.items["Патрубок силиконовый BSI D75L100-2"]
+    assert [(c.qty_per_carton, c.cartons, c.gross_kg) for c in d75.cartons] == [(100, 2, Decimal("16.00"))]
+    assert pl.mixed_cartons == [("", [("Патрубок силиконовый BSI 90/60", 5), ("Патрубок силиконовый BSI D63L80-2", 4)])]
+    assert pl.items["Патрубок силиконовый BSI 90/60"].cartons == []
+
+
+def test_chinese_packing_list_preferred_over_russian(client_in, import_catalog):
+    client_in.post(reverse("stock:batch_import"), {"files": [_xlsx(RU_PL_ROWS), _xlsx(PL_ROWS), _xlsx(INVOICE_ROWS)]})
+    draft = client_in.session["receipt_import_draft"]
+    assert draft["header"]["pl_source"] == "cn"
+    assert any("русский упаковочный лист" in n for n in draft["notes"])
