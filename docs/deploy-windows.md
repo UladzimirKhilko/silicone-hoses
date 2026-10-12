@@ -89,9 +89,9 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\update.ps1
 
 - Если программа ставилась через **git** (`git clone`), скрипт сам скачает новую версию (`git pull`).
   Для самого первого обновления на эту версию скрипта один раз выполните перед ним `git pull`.
-- Если ставилась из **ZIP**: на GitHub → ветка `claude/busy-bohr-hd5pfq` → **Code → Download ZIP**,
-  распаковать поверх `C:\Patrubki` (**не трогать** `.env`, папки `data`, `.venv`, файл `db.sqlite3`),
-  затем запустить команду выше.
+- Если ставилась из **ZIP** (без git) — пошаговая инструкция: **[update-windows.md](update-windows.md)**.
+  Кратко: скачать ZIP, распаковать в `C:\Temp\` и запустить
+  `powershell -ExecutionPolicy Bypass -File C:\Temp\silicone-hoses-claude-busy-bohr-hd5pfq\deploy\windows\update-from-zip.ps1`.
 
 Скрипт обновит библиотеки, базу и оформление, перезапустит программу и покажет номер версии.
 После этого в браузере нажмите **Ctrl+F5** (обновить без кэша).

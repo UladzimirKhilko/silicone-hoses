@@ -24,6 +24,7 @@
 | [docs/13-interview.md](docs/13-interview.md) | Итоги интервью: пользователи, склад, приход, отгрузки, чертежи, заявки, отчёты |
 | [docs/14-amkador-belaz.md](docs/14-amkador-belaz.md) | Чертежи Амкадора (BSI, завода, заказчика) и БелАЗа; расхождения |
 | [docs/15-prices-sales.md](docs/15-prices-sales.md) | Цены (завода, учётная, продажи), прибыль, договоры и спецификации, заявки, заказ в Китай |
+| [docs/update-windows.md](docs/update-windows.md) | Обновление программы на сервере Windows без git (для сисадмина) |
 | [docs/16-ui-reports.md](docs/16-ui-reports.md) | Интерфейс, сводка, отчёты «Отгрузки по месяцам» и «Заканчивается», Excel, справка |
 | [docs/glossary.md](docs/glossary.md) | Глоссарий терминов |
 
