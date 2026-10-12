@@ -94,35 +94,13 @@ docker compose exec web python manage.py createsuperuser     # админист�
 
 ## 7. Резервное копирование
 
-```bash
-deploy/backup.sh          # база + файлы в папку backups/, хранятся 30 дней
-```
-
-Ежедневно в 02:30 (cron):
-
-```bash
-crontab -e
-30 2 * * * cd /opt/silicone-hoses && deploy/backup.sh >> backups/backup.log 2>&1
-```
-
-Папку `backups/` желательно копировать на другой диск или сетевое хранилище.
-
-Восстановление (проверено):
-
-```bash
-docker compose stop web
-docker compose exec -T db dropdb -U hoses hoses
-docker compose exec -T db createdb -U hoses hoses
-gunzip -c backups/db-ДАТА.sql.gz | docker compose exec -T db psql -q -U hoses hoses
-docker compose start web
-docker compose exec -T web tar xzf - -C /data < backups/media-ДАТА.tar.gz
-```
+Программа резервные копии не делает — это задача сисадмина. Что сохранять: базу PostgreSQL
+(`docker compose exec -T db pg_dump -U hoses hoses`) и том с файлами (`/data/media` в контейнере `web`).
 
 ## 8. Обновление (новые этапы)
 
 ```bash
 cd /opt/silicone-hoses
-deploy/backup.sh
 git pull
 docker compose up -d --build
 ```

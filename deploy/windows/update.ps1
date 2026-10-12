@@ -6,8 +6,6 @@
   Если программа ставилась через git — новая версия скачается сама (git pull).
   Иначе перед запуском распакуйте новый ZIP поверх старой папки (файл .env, папки data и .venv не трогать).
 #>
-param([string]$BackupDir = "C:\Backups\Patrubki")
-
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path "$PSScriptRoot\..\..").Path
 Set-Location $Root
@@ -29,8 +27,6 @@ if ((Test-Path (Join-Path $Root ".git")) -and (Get-Command git -ErrorAction Sile
     Write-Host "Папка не из git: убедитесь, что новая версия (ZIP) уже распакована поверх старой." -ForegroundColor Yellow
 }
 
-Write-Host "Резервная копия перед обновлением…"
-Run $venvPy @("manage.py", "backup", $BackupDir)
 Stop-ScheduledTask -TaskName "Patrubki BSI" -ErrorAction SilentlyContinue
 Run $venvPy @("-m", "pip", "install", "-r", "requirements.txt", "-q")
 Run $venvPy @("manage.py", "migrate", "--noinput")

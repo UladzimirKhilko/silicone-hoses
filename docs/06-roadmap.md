@@ -19,7 +19,7 @@
 ## Технологии
 
 Python + Django, PostgreSQL, интерфейс Django-шаблоны + HTMX (быстро, работает на телефоне),
-просмотр PDF — PDF.js, документы — openpyxl/docx. Сервер — Docker на VPS, ежедневный бэкап.
+просмотр PDF — PDF.js, документы — openpyxl/docx. Сервер — Windows Server предприятия (или Docker); резервное копирование — силами сисадмина.
 
 ## Как работаем
 
