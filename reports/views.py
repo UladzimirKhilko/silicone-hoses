@@ -135,5 +135,34 @@ def low_stock(request):
 
 
 @login_required
+def requests_monthly(request):
+    date_from, date_to = _period(request.GET)
+    customer = request.GET.get("customer", "")
+    months, grand = an.monthly_requests(date_from, date_to, int(customer) if customer.isdigit() else None)
+    if excel.wants_xlsx(request):
+        heads = ["Месяц", "Заказчик", "Заявок", "Заказано, шт", "Заказано, BYN", "Отгружено, шт", "Отгружено, BYN",
+                 "Выполнено, %", "Осталось, BYN", "Не хватает, BYN"]
+
+        def row(label, who, t):
+            return [label, who, t.count, t.qty, t.amount, t.shipped_qty, t.shipped_amount, t.percent, t.left_amount, t.short_amount]
+
+        data = []
+        for m, total, by_customer in months:
+            if not total.count:
+                continue
+            for name, t in by_customer.items():
+                data.append(row(an.month_label(m), name, t))
+            if len(by_customer) > 1:
+                data.append(row(an.month_label(m), "итого за месяц", total))
+        data.append(row("Итого", "", grand))
+        return excel.table("Заявки по месяцам", heads, data, f"Заявки по месяцам {date_from:%Y-%m}—{date_to:%Y-%m}.xlsx",
+                           caption=f"Заявки по месяцам {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y}, суммы без НДС")
+    return render(request, "reports/requests_monthly.html", {
+        "date_from": date_from, "date_to": date_to, "customer": customer, "customers": Customer.objects.all(),
+        "months": [(an.month_label(m), t, c) for m, t, c in reversed(months)], "grand": grand,
+    })
+
+
+@login_required
 def help_page(request):
     return render(request, "reports/help.html")

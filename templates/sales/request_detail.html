@@ -16,28 +16,35 @@
   </div>
 </div>
 {% if req.notes %}<p class="note">{{ req.notes|linebreaksbr }}</p>{% endif %}
-<p class="summary">
-  <span class="badge">заказано {{ summary.qty }} шт</span>
-  <span class="badge">отгружено {{ summary.shipped }} шт · {{ summary.percent }} %</span>
+<div class="kpis req-kpis">
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon">{% icon "clipboard-list" %}</span>Заявка</div>
+    <div class="kpi-value">{{ summary.amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">{{ summary.qty|money:0 }} шт · без НДС</div></div>
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon ok">{% icon "truck" %}</span>Отгружено</div>
+    <div class="kpi-value">{{ summary.shipped_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">{{ summary.shipped|money:0 }} шт · {{ summary.percent }} %</div></div>
   {% if req.is_open %}
-    <span class="badge badge-serial">есть на складе {{ summary.covered }} из {{ summary.left }}</span>
-    {% if summary.short %}<span class="badge badge-drawing_pending">не хватает {{ summary.short }} шт</span>{% endif %}
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon ok">{% icon "boxes" %}</span>Можно отгрузить сейчас</div>
+    <div class="kpi-value">{{ summary.covered_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">{{ summary.covered|money:0 }} из {{ summary.left|money:0 }} шт</div></div>
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon {% if summary.short %}bad{% else %}ok{% endif %}">{% icon "triangle-alert" %}</span>Не хватает</div>
+    <div class="kpi-value">{{ summary.short_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">{{ summary.short|money:0 }} шт</div></div>
   {% endif %}
-</p>
+</div>
+{% if summary.no_price %}<p class="msg msg-warning">{% icon "triangle-alert" %}<span>Без цены {{ summary.no_price }} поз. — нет спецификации и прошлых продаж; в суммы не вошли. Укажите цену в заявке или спецификации.</span></p>{% endif %}
 <div class="table-wrap">
-<table class="products">
-  <thead><tr><th>Изделие</th><th class="num">Заказано</th><th class="num">Отгружено</th><th class="num">Осталось</th><th class="num">На складе</th><th class="num" title="Под более ранние открытые заявки">Резерв других</th><th class="num">В пути</th><th class="num">Не хватает</th></tr></thead>
+<table class="products compact">
+  <thead><tr><th>Изделие</th><th class="num">Заказано</th><th class="num">Цена</th><th class="num">Сумма</th><th class="num">Отгружено</th><th class="num">Осталось</th><th class="num">На складе</th><th class="num" title="Под более ранние открытые заявки">Резерв</th><th class="num">В пути</th><th class="num">Не хватает</th></tr></thead>
   <tbody>
   {% for l in rows %}
     <tr class="{% if l.state == 'short' %}row-warn{% elif l.state == 'transit' %}row-attention{% endif %}">
-      <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a> <span class="muted small">{{ l.product.yapib }}</span>{% if l.price_byn %}<div class="muted small">цена заявки {{ l.price_byn|money }}</div>{% endif %}</td>
+      <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a> <span class="muted small">{{ l.product.yapib }}</span></td>
       <td data-label="Заказано" class="num">{{ l.qty }}</td>
+      <td data-label="Цена" class="num">{{ l.price|money }}{% if l.price_source %}<div class="muted small">{{ l.price_source }}</div>{% endif %}</td>
+      <td data-label="Сумма" class="num strong">{{ l.amount|money }}</td>
       <td data-label="Отгружено" class="num">{{ l.shipped }}</td>
       <td data-label="Осталось" class="num strong">{{ l.left }}</td>
       <td data-label="На складе" class="num">{{ l.on_hand }}</td>
       <td data-label="Резерв других" class="num">{{ l.reserved_before|default:"—" }}</td>
       <td data-label="В пути" class="num">{{ l.in_transit|default:"—" }}</td>
-      <td data-label="Не хватает" class="num">{% if l.short %}<span class="minus strong">{{ l.short }}</span>{% elif l.left %}<span class="plus">есть</span>{% else %}<span class="plus">✓</span>{% endif %}</td>
+      <td data-label="Не хватает" class="num">{% if l.short %}<span class="minus strong">{{ l.short }}</span>{% if l.short_amount %}<div class="muted small">{{ l.short_amount|money }} BYN</div>{% endif %}{% elif l.left %}<span class="plus">есть</span>{% else %}<span class="plus">✓</span>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

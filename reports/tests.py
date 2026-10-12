@@ -141,3 +141,41 @@ def test_excel_contents(client_in, mtz, product):
 def test_login_page_renders(client, db):
     html = client.get(reverse("login")).content.decode()
     assert "Вход в систему" in html and "login-form" in html
+
+
+def test_requests_monthly_in_money(client_in, mtz, product):
+    from sales.models import Contract, CustomerRequest, RequestLine, SpecLine, Specification
+
+    received(product, 100)
+    contract = Contract.objects.create(customer=mtz, number="09/185")
+    spec = Specification.objects.create(contract=contract, number="1", date=dt.date(2025, 1, 1))
+    SpecLine.objects.create(spec=spec, product=product, price_byn=Decimal("6.50"))
+    req = CustomerRequest.objects.create(customer=mtz, date=dt.date(2025, 6, 2))
+    RequestLine.objects.create(request=req, product=product, qty=150)
+    cancelled = CustomerRequest.objects.create(customer=mtz, date=dt.date(2025, 6, 5), status=CustomerRequest.Status.CANCELLED)
+    RequestLine.objects.create(request=cancelled, product=product, qty=999)
+    s = Shipment.objects.create(customer=mtz, date=dt.date(2025, 6, 10), request=req)
+    stock.post_shipment(s, [{"product": product, "qty": 60}])
+    months, grand = an.monthly_requests(dt.date(2025, 6, 1), dt.date(2025, 6, 30))
+    june = months[0][1]
+    # 150 × 6,50 = 975; отгружено 60 × 6,50 = 390; осталось 90 → на складе 40 → не хватает 50 × 6,50 = 325
+    assert (june.count, june.amount, june.shipped_amount, june.left_amount, june.short_amount, june.percent) == (
+        1, Decimal("975.00"), Decimal("390.00"), Decimal("585.00"), Decimal("325.00"), 40)
+    resp = client_in.get(reverse("reports:requests_monthly"), {"date_from": "2025-06-01", "date_to": "2025-06-30"})
+    assert "975,00" in resp.content.decode()
+    ws = _sheet(client_in.get(reverse("reports:requests_monthly"), {"date_from": "2025-06-01", "date_to": "2025-06-30", "format": "xlsx"}))
+    assert [c.value for c in ws[4]][:5] == ["июнь 2025", "МТЗ", 1, 150, 975]
+    page = client_in.get(reverse("sales:request_list"), {"status": "", "month": "2025-06"})
+    assert page.context["totals"]["amount"] == Decimal("975.00")
+
+
+def test_stock_list_price_and_amount(client_in, mtz, product):
+    received(product, 100)
+    ship(mtz, product, 10, dt.date(2025, 3, 1), price="7.00")
+    resp = client_in.get(reverse("catalog:product_list"))
+    p = next(x for x in resp.context["products"] if x.pk == product.pk)
+    assert (p.on_hand, p.price, p.stock_amount) == (90, Decimal("7.00"), Decimal("630.00"))
+    assert resp.context["total_amount"] == Decimal("630.00")
+    ws = _sheet(client_in.get(reverse("stock:stock_export")))
+    row = next(r for r in ws.iter_rows(min_row=2, values_only=True) if r[0] == product.code)
+    assert row[6:10] == (90, 7.0, 630.0, "последняя продажа")

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Заявки по месяцам — Патрубки BSI{% endblock %}
+{% block content %}
+<p><a href="{% url 'reports:index' %}">← Отчёты</a></p>
+<div class="head"><div><h1>Заявки по месяцам</h1><p class="muted">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }} · по дате заявки · суммы без НДС, BYN · отменённые не считаются</p></div>
+  <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=xlsx">{% icon "file-spreadsheet" %}В Excel</a></div>
+<form method="get" class="filters">
+  <label class="check-label">с <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}"></label>
+  <label class="check-label">по <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}"></label>
+  <select name="customer"><option value="">Все заказчики</option>{% for c in customers %}<option value="{{ c.pk }}" {% if customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <button class="btn primary">Показать</button>
+</form>
+<div class="kpis">
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon">{% icon "clipboard-list" %}</span>Заказано</div>
+    <div class="kpi-value">{{ grand.amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">{{ grand.count }} заявок · {{ grand.qty|money:0 }} шт</div></div>
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon ok">{% icon "truck" %}</span>Отгружено по заявкам</div>
+    <div class="kpi-value">{{ grand.shipped_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">{{ grand.shipped_qty|money:0 }} шт · {{ grand.percent }} %</div></div>
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon warn">{% icon "clipboard-list" %}</span>Осталось отгрузить</div>
+    <div class="kpi-value">{{ grand.left_amount|money:0 }}<small>BYN</small></div></div>
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon {% if grand.short_amount %}bad{% else %}ok{% endif %}">{% icon "triangle-alert" %}</span>Не хватает товара</div>
+    <div class="kpi-value">{{ grand.short_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">по открытым заявкам</div></div>
+</div>
+{% if grand.no_price %}<p class="msg msg-warning">{% icon "triangle-alert" %}<span>Без цены {{ grand.no_price }} поз. — нет цены в заявке, спецификации и прошлых продажах; в суммы не вошли.</span></p>{% endif %}
+<div class="table-wrap">
+<table class="products">
+  <thead><tr><th>Месяц</th><th class="num">Заявок</th><th class="num">Заказано, шт</th><th class="num">Заказано, BYN</th><th class="num">Отгружено, BYN</th><th>Выполнено</th><th class="num">Осталось, BYN</th><th class="num">Не хватает, BYN</th></tr></thead>
+  <tbody>
+  {% for label, t, by_customer in months %}{% if t.count %}
+    <tr class="month-row">
+      <td class="code">{{ label }}</td>
+      <td data-label="Заявок" class="num">{{ t.count }}</td>
+      <td data-label="Заказано, шт" class="num">{{ t.qty|money:0 }}</td>
+      <td data-label="Заказано" class="num strong">{{ t.amount|money }}</td>
+      <td data-label="Отгружено" class="num">{{ t.shipped_amount|money }}</td>
+      <td data-label="Выполнено"><span class="meter-row"><span class="meter {% if t.percent < 50 %}warn{% endif %}"><span style="width: {{ t.percent }}%"></span></span>{{ t.percent }} %</span></td>
+      <td data-label="Осталось" class="num">{{ t.left_amount|money }}</td>
+      <td data-label="Не хватает" class="num {% if t.short_amount %}minus{% endif %}">{{ t.short_amount|money }}</td>
+    </tr>
+    {% if by_customer|length > 1 %}{% for name, c in by_customer.items %}
+    <tr class="sub-row"><td class="code"><span class="muted">↳</span> {{ name }}</td><td data-label="Заявок" class="num">{{ c.count }}</td><td data-label="Заказано, шт" class="num">{{ c.qty|money:0 }}</td>
+      <td data-label="Заказано" class="num">{{ c.amount|money }}</td><td data-label="Отгружено" class="num">{{ c.shipped_amount|money }}</td><td data-label="Выполнено">{{ c.percent }} %</td>
+      <td data-label="Осталось" class="num">{{ c.left_amount|money }}</td><td data-label="Не хватает" class="num">{{ c.short_amount|money }}</td></tr>
+    {% endfor %}{% endif %}
+  {% endif %}{% endfor %}
+  {% if grand.count %}<tr class="total"><td>Итого</td><td class="num">{{ grand.count }}</td><td class="num">{{ grand.qty|money:0 }}</td><td class="num">{{ grand.amount|money }}</td>
+    <td class="num">{{ grand.shipped_amount|money }}</td><td>{{ grand.percent }} %</td><td class="num">{{ grand.left_amount|money }}</td><td class="num">{{ grand.short_amount|money }}</td></tr>
+  {% else %}<tr><td colspan="8" class="empty">Заявок за период нет.</td></tr>{% endif %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

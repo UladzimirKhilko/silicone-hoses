@@ -195,6 +195,12 @@ def request_list(request):
         items = items.filter(status=status)
     if request.GET.get("customer", "").isdigit():
         items = items.filter(customer_id=request.GET["customer"])
+    if request.GET.get("month"):
+        try:
+            y, m = map(int, request.GET["month"].split("-"))
+            items = items.filter(date__year=y, date__month=m)
+        except ValueError:
+            pass
     items = list(items)
     if request.GET.get("format") == "xlsx":
         from reports import excel
@@ -203,12 +209,17 @@ def request_list(request):
         for item in items:
             for line in services.request_rows(item):
                 rows.append([item.date, item.customer.name, item.number, item.get_status_display(), item.due_date, line.product.code,
-                             line.qty, line.shipped, line.left, line.on_hand, line.short])
-        return excel.table("Заявки", ["Дата", "Заказчик", "Номер", "Статус", "Срок", "Изделие", "Заказано", "Отгружено", "Осталось",
-                                      "На складе", "Не хватает"], rows, f"Заявки {dt.date.today():%Y-%m-%d}.xlsx")
+                             line.qty, line.price, line.amount, line.shipped, line.shipped_amount, line.left, line.on_hand,
+                             line.short, line.short_amount])
+        return excel.table("Заявки", ["Дата", "Заказчик", "Номер", "Статус", "Срок", "Изделие", "Заказано", "Цена без НДС", "Сумма",
+                                      "Отгружено", "Отгружено, BYN", "Осталось", "На складе", "Не хватает", "Не хватает, BYN"],
+                           rows, f"Заявки {dt.date.today():%Y-%m-%d}.xlsx")
     for item in items:
         item.summary = services.request_summary(services.request_rows(item))
+    counted = [item for item in items if item.status != CustomerRequest.Status.CANCELLED]  # отменённые в итог не идут
+    totals = {k: sum(item.summary[k] for item in counted) for k in ("qty", "amount", "shipped_amount", "left_amount", "short_amount")}
     return render(request, "sales/request_list.html", {
+        "totals": totals,
         "items": items, "status": status, "statuses": CustomerRequest.Status.choices,
         "customers": Customer.objects.all(), "filters": request.GET,
     })

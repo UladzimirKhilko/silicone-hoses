@@ -176,8 +176,12 @@ def test_shipment_from_request_prefills_remaining(client_in, mtz, p75):
     resp = client_in.get(reverse("stock:shipment_create") + f"?request={req.pk}")
     assert resp.context["formset"].initial == [{"product": p75, "qty": 30, "price_byn": None}]  # сколько есть
     post_shipment(client_in, mtz, [(p75, 30, "6")], request=req.pk)
-    page = client_in.get(req.get_absolute_url()).content.decode()
-    assert "отгружено 30 шт · 60 %" in page and "не хватает 20 шт" in page
+    resp = client_in.get(req.get_absolute_url())
+    summary = resp.context["summary"]
+    assert (summary["shipped"], summary["percent"], summary["short"]) == (30, 60, 20)
+    # цена — последняя продажа этому заказчику (6,00): заявка 300, отгружено 180, не хватает 120 BYN
+    assert (summary["amount"], summary["shipped_amount"], summary["short_amount"]) == (Decimal("300"), Decimal("180"), Decimal("120"))
+    assert "30 шт · 60 %" in resp.content.decode()
 
 
 def test_request_create_with_paste_and_list(client_in, mtz, p75):

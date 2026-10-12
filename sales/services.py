@@ -97,6 +97,37 @@ def link_past_shipments(spec):
     return count
 
 
+# --- Цена продажи изделия (для сумм в остатках и заявках) ---
+
+def sale_prices(pairs, on_date=None):
+    """{(product_id, customer_id): (цена без НДС, откуда)} для пар изделие-заказчик.
+
+    Порядок: действующая спецификация заказчика → последняя отгрузка этому заказчику →
+    последняя отгрузка любому заказчику. Нет ничего — (None, "").
+    """
+    import datetime as dt
+
+    on_date = on_date or dt.date.today()
+    pairs = set(pairs)
+    product_ids = {p for p, _ in pairs}
+    spec = {}
+    qs = SpecLine.objects.filter(product_id__in=product_ids, spec__closed=False, spec__date__lte=on_date).filter(
+        Q(spec__valid_until__isnull=True) | Q(spec__valid_until__gte=on_date)
+    ).select_related("spec").order_by("spec__date", "spec_id")
+    for line in qs:  # новые спецификации перезаписывают старые
+        spec[line.product_id, line.spec.contract.customer_id] = (line.price_byn, f"спец. № {line.spec.number}")
+    by_customer, anyone = {}, {}
+    rows = (ShipmentLine.objects.filter(product_id__in=product_ids, price_byn__isnull=False)
+            .order_by("shipment__date", "pk").values_list("product_id", "shipment__customer_id", "price_byn"))
+    for product_id, customer_id, price in rows:
+        by_customer[product_id, customer_id] = (price, "последняя продажа")
+        anyone[product_id] = (price, "последняя продажа")
+    result = {}
+    for pair in pairs:
+        result[pair] = spec.get(pair) or by_customer.get(pair) or anyone.get(pair[0]) or (None, "")
+    return result
+
+
 # --- Вставка таблицы из Excel / Word ---
 
 _NUM = re.compile(r"^-?\d[\d\s ]*([.,]\d+)?$")
@@ -218,7 +249,12 @@ def request_rows(req):
             continue
         if (other.date, other.pk) < (req.date, req.pk):
             before[product_id] += left
+    prices = sale_prices(((line.product_id, req.customer_id) for line in lines), req.date)
     for line in lines:
+        if line.price_byn is not None:
+            line.price, line.price_source = line.price_byn, "цена заявки"
+        else:
+            line.price, line.price_source = prices[line.product_id, req.customer_id]
         line.shipped = shipped.get((req.pk, line.product_id), 0)
         line.left = max(line.qty - line.shipped, 0)
         line.on_hand = have.get(line.product_id, 0)
@@ -228,6 +264,12 @@ def request_rows(req):
         line.in_transit = transit.get(line.product_id, 0)
         line.short = line.left - line.covered
         line.state = "done" if not line.left else ("ok" if not line.short else ("transit" if line.short <= line.in_transit else "short"))
+        p = line.price
+        line.amount = line.qty * p if p is not None else None
+        line.shipped_amount = min(line.shipped, line.qty) * p if p is not None else None
+        line.left_amount = line.left * p if p is not None else None
+        line.covered_amount = line.covered * p if p is not None else None
+        line.short_amount = line.short * p if p is not None else None
     return lines
 
 
@@ -238,6 +280,12 @@ def request_summary(lines):
         "qty": total, "shipped": shipped, "percent": round(shipped * 100 / total) if total else 0,
         "left": sum(line.left for line in lines), "covered": sum(line.covered for line in lines),
         "short": sum(line.short for line in lines),
+        "amount": sum((line.amount or 0) for line in lines),
+        "shipped_amount": sum((line.shipped_amount or 0) for line in lines),
+        "left_amount": sum((line.left_amount or 0) for line in lines),
+        "covered_amount": sum((line.covered_amount or 0) for line in lines),
+        "short_amount": sum((line.short_amount or 0) for line in lines),
+        "no_price": sum(1 for line in lines if getattr(line, "price", None) is None),
     }
 
 

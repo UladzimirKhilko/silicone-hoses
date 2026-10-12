@@ -188,3 +188,51 @@ def bar_chart(points, width=720, height=240, unit="BYN"):
     grid = [{"y": top + plot_h - plot_h * k * step / top_value, "label": compact(k * step)} for k in range(int(top_value / step) + 1)]
     return {"width": width, "height": height, "bars": bars, "grid": grid, "left": left, "right": width - right,
             "base": top + plot_h, "plot_top": top, "plot_h": plot_h, "label_y": height - 8, "unit": unit}
+
+
+# --- Заявки по месяцам (в штуках и деньгах) ---
+
+@dataclass
+class RequestTotals:
+    count: int = 0
+    qty: int = 0
+    amount: Decimal = Decimal(0)
+    shipped_qty: int = 0
+    shipped_amount: Decimal = Decimal(0)
+    left_amount: Decimal = Decimal(0)
+    short_amount: Decimal = Decimal(0)
+    no_price: int = 0
+
+    def add(self, s):
+        self.count += 1
+        self.qty += s["qty"]
+        self.amount += s["amount"]
+        self.shipped_qty += s["shipped"]
+        self.shipped_amount += s["shipped_amount"]
+        self.left_amount += s["left_amount"]
+        self.short_amount += s["short_amount"]
+        self.no_price += s["no_price"]
+
+    @property
+    def percent(self):
+        return round(self.shipped_amount * 100 / self.amount) if self.amount else (round(self.shipped_qty * 100 / self.qty) if self.qty else 0)
+
+
+def monthly_requests(date_from, date_to, customer_id=None):
+    """По месяцам даты заявки: сколько заказали (шт, BYN), сколько отгрузили по заявкам, сколько осталось / не хватает.
+    Отменённые заявки не считаются. Возвращает [(месяц, итог, {заказчик: итог})], общий итог."""
+    from sales.models import CustomerRequest
+
+    reqs = (CustomerRequest.objects.filter(date__range=(date_from, date_to)).exclude(status=CustomerRequest.Status.CANCELLED)
+            .select_related("customer").order_by("date"))
+    if customer_id:
+        reqs = reqs.filter(customer_id=customer_id)
+    months = {m: (RequestTotals(), defaultdict(RequestTotals)) for m in month_range(date_from, date_to)}
+    grand = RequestTotals()
+    for req in reqs:
+        s = sales.request_summary(sales.request_rows(req))
+        total, by_customer = months[month_start(req.date)]
+        total.add(s)
+        by_customer[req.customer.name].add(s)
+        grand.add(s)
+    return [(m, t, dict(sorted(c.items()))) for m, (t, c) in months.items()], grand

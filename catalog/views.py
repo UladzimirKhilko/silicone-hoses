@@ -38,8 +38,11 @@ def product_list(request):
     ids = [p.pk for p in products]
     balances = batch_balances(ids)
     have, transit = on_hand(ids, balances), in_transit(ids)
+    prices = sales_services.sale_prices((p.pk, p.customer_id) for p in products)
     for p in products:
         p.on_hand, p.in_transit = have.get(p.pk, 0), transit.get(p.pk, 0)
+        p.price, p.price_source = prices[p.pk, p.customer_id]
+        p.stock_amount = p.on_hand * p.price if p.price is not None and p.on_hand else None
     if request.GET.get("in_stock"):
         products = [p for p in products if p.on_hand > 0]
     value = pricing.stock_value(balances) if pricing.can_see_costs(request.user) else None
@@ -49,6 +52,8 @@ def product_list(request):
         {
             "products": products,
             "total_on_hand": sum(p.on_hand for p in products),
+            "total_amount": sum((p.stock_amount or 0) for p in products),
+            "no_price_qty": sum(p.on_hand for p in products if p.on_hand and p.price is None),
             "stock_value": value[1] if value else None,
             "stock_value_missing": value[2] if value else 0,
             "customers": Customer.objects.all(),

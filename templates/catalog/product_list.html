@@ -4,7 +4,7 @@
 <div class="head">
   <div>
     <h1>Остатки и изделия</h1>
-    <p class="muted">Найдено {{ products|length }} · на складе <b>{{ total_on_hand|money:0 }} шт</b>{% if can_see_costs and stock_value is not None %} · по учётным ценам <b>{{ stock_value|money:0 }} BYN</b>{% if stock_value_missing %} <span title="Остаток без учётной цены — не вошёл в сумму">(без цены {{ stock_value_missing }} шт)</span>{% endif %}{% endif %}</p>
+    <p class="muted">Найдено {{ products|length }} · на складе <b>{{ total_on_hand|money:0 }} шт</b> на сумму <b>{{ total_amount|money:0 }} BYN</b> по ценам продажи{% if no_price_qty %} <span title="Нет спецификации и прошлых продаж — не вошли в сумму">(без цены {{ no_price_qty|money:0 }} шт)</span>{% endif %}{% if can_see_costs and stock_value is not None %} · по учётным <b>{{ stock_value|money:0 }} BYN</b>{% if stock_value_missing %} <span title="Остаток без учётной цены — не вошёл в сумму">(без цены {{ stock_value_missing }} шт)</span>{% endif %}{% endif %}</p>
   </div>
   <div class="actions">
     <a class="btn" href="{% url 'stock:stock_export' %}?{{ request.GET.urlencode }}">{% icon "file-spreadsheet" %}В Excel</a>
@@ -36,7 +36,7 @@
   </div>
   <div class="table-wrap">
   <table class="products product-table">
-    <thead><tr><th class="check-col"><input type="checkbox" data-check-all aria-label="Выбрать все"></th><th>Изделие</th><th>Заказчик</th><th>Статус</th><th class="num">Остаток</th><th class="num">В пути</th><th></th></tr></thead>
+    <thead><tr><th class="check-col"><input type="checkbox" data-check-all aria-label="Выбрать все"></th><th>Изделие</th><th>Заказчик</th><th>Статус</th><th class="num">Остаток</th><th class="num">Цена, BYN</th><th class="num">Сумма, BYN</th><th class="num">В пути</th><th></th></tr></thead>
     <tbody>
     {% for p in products %}
       <tr data-href="{{ p.get_absolute_url }}">
@@ -46,11 +46,13 @@
         <td data-label="Заказчик">{{ p.customer|default:"—" }}</td>
         <td data-label="Статус"><span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></td>
         <td data-label="Остаток" class="num stock-cell {% if p.on_hand %}strong{% else %}muted{% endif %}">{{ p.on_hand|money:0 }}</td>
+        <td data-label="Цена" class="num" {% if p.price_source %}title="{{ p.price_source }}"{% endif %}>{{ p.price|money }}</td>
+        <td data-label="Сумма" class="num {% if p.stock_amount %}strong{% else %}muted{% endif %}">{% if p.stock_amount %}{{ p.stock_amount|money }}{% else %}—{% endif %}</td>
         <td data-label="В пути" class="num muted">{% if p.in_transit %}{{ p.in_transit|money:0 }}{% else %}—{% endif %}</td>
         <td class="row-end">{% with d=p.drawing_files.all %}{% if d %}<span title="Есть чертёж">{% icon "image" "muted" %}</span>{% endif %}{% endwith %}{% icon "chevron-right" "muted" %}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="7" class="empty">Ничего не найдено.</td></tr>
+      <tr><td colspan="9" class="empty">Ничего не найдено.</td></tr>
     {% endfor %}
     </tbody>
   </table>

@@ -585,13 +585,22 @@ def stock_export(request):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Остатки"
-    ws.append(["Код", "ЯПИБ", "Заказчик", "Тип", "Размеры", "Цвет", "Остаток, шт", "В пути, шт"]
-              + (["Сумма по учётным ценам, BYN"] if costs else []))
+    from sales.services import sale_prices
+
+    prices = sale_prices((p.pk, p.customer_id) for p in products)
+    ws.append(["Код", "ЯПИБ", "Заказчик", "Тип", "Размеры", "Цвет", "Остаток, шт", "Цена без НДС, BYN", "Сумма, BYN", "Откуда цена",
+               "В пути, шт"] + (["Сумма по учётным ценам, BYN"] if costs else []))
     for p in products:
+        price, source = prices[p.pk, p.customer_id]
+        qty = have.get(p.pk, 0)
         ws.append([p.code, p.yapib or "", p.customer.name if p.customer_id else "", p.get_kind_display(), p.size_label,
-                   p.get_color_display(), have.get(p.pk, 0), transit.get(p.pk, 0)]
+                   p.get_color_display(), qty, float(price) if price is not None else None,
+                   float(price * qty) if price is not None and qty else None, source, transit.get(p.pk, 0)]
                   + ([float(pricing.money(value[p.pk])) if p.pk in value else None] if costs else []))
-    for col, width in zip("ABCDEFGHI", (28, 10, 14, 16, 26, 10, 12, 12, 16)):
+    for row in ws.iter_rows(min_row=2, min_col=8, max_col=9):
+        for cell in row:
+            cell.number_format = "#,##0.00"
+    for col, width in zip("ABCDEFGHIJKL", (28, 10, 14, 16, 26, 10, 12, 14, 14, 18, 12, 16)):
         ws.column_dimensions[col].width = width
     return _xlsx_response(wb, f"ostatki-{dt.date.today():%Y-%m-%d}.xlsx")
 

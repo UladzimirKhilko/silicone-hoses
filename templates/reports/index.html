@@ -7,6 +7,10 @@
     <div class="kpi-label"><span class="kpi-icon">{% icon "chart-column" %}</span>Отгрузки по месяцам</div>
     <div class="kpi-sub">По заказчикам или изделиям: штуки и сумма без НДС за каждый месяц, итоги.</div>
   </a>
+  <a class="kpi" href="{% url 'reports:requests_monthly' %}">
+    <div class="kpi-label"><span class="kpi-icon">{% icon "clipboard-list" %}</span>Заявки по месяцам</div>
+    <div class="kpi-sub">Месячные заявки в штуках и деньгах: заказано, отгружено, выполнение %, осталось и не хватает в BYN.</div>
+  </a>
   <a class="kpi" href="{% url 'reports:low_stock' %}">
     <div class="kpi-label"><span class="kpi-icon warn">{% icon "triangle-alert" %}</span>Заканчивается товар</div>
     <div class="kpi-sub">Чего хватит меньше чем на 4 месяца продаж или меньше минимума — с подсказкой, сколько заказать.</div>
