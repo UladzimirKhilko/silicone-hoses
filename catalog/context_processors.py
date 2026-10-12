@@ -2,6 +2,7 @@
 
 from django.urls import reverse
 
+from hoses.version import VERSION
 from stock.pricing import can_see_costs
 
 # (заголовок группы, [(название, url name, иконка, префиксы путей для подсветки, только руководителю)])
@@ -35,7 +36,7 @@ def _active(path, prefixes):
 def ui(request):
     user = getattr(request, "user", None)
     if not user or not user.is_authenticated:
-        return {}
+        return {"app_version": VERSION}
     costs = can_see_costs(user)
     path = request.path
     groups, flat = [], {}
@@ -53,6 +54,7 @@ def ui(request):
     else:
         role = ", ".join(user.groups.values_list("name", flat=True)) or "Пользователь"
     return {
+        "app_version": VERSION,
         "nav_groups": groups,
         "nav_tabs": [flat[n] for n in TABS if n in flat],
         "user_role": role,

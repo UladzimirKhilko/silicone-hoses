@@ -3,8 +3,8 @@
 
       powershell -ExecutionPolicy Bypass -File deploy\windows\update.ps1
 
-  Перед запуском замените файлы программы новой версией (git pull или распакуйте новый ZIP
-  поверх старой папки — файл .env, папки data и .venv при этом не трогать).
+  Если программа ставилась через git — новая версия скачается сама (git pull).
+  Иначе перед запуском распакуйте новый ZIP поверх старой папки (файл .env, папки data и .venv не трогать).
 #>
 param([string]$BackupDir = "C:\Backups\Patrubki")
 
@@ -20,6 +20,15 @@ function Run($exe, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Команда завершилась с ошибкой: $exe $($arguments -join ' ')" }
 }
 
+# Если программа установлена через git — сначала забираем новую версию с GitHub.
+if ((Test-Path (Join-Path $Root ".git")) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "Загружаю новую версию с GitHub (git pull)…"
+    & git -C $Root pull --ff-only
+    if ($LASTEXITCODE -ne 0) { throw "git pull не удался — проверьте доступ к GitHub или обновите файлы вручную (ZIP)." }
+} else {
+    Write-Host "Папка не из git: убедитесь, что новая версия (ZIP) уже распакована поверх старой." -ForegroundColor Yellow
+}
+
 Write-Host "Резервная копия перед обновлением…"
 Run $venvPy @("manage.py", "backup", $BackupDir)
 Stop-ScheduledTask -TaskName "Patrubki BSI" -ErrorAction SilentlyContinue
@@ -29,4 +38,6 @@ Run $venvPy @("manage.py", "setup_roles")
 Run $venvPy @("manage.py", "import_cartons")
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Start-ScheduledTask -TaskName "Patrubki BSI"
-Write-Host "Обновлено." -ForegroundColor Green
+$version = & $venvPy -c "import hoses.version as v; print(v.VERSION)"
+Write-Host "Обновлено. Версия: $version" -ForegroundColor Green
+Write-Host "В браузере нажмите Ctrl+F5, чтобы увидеть новый интерфейс."

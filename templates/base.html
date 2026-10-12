@@ -28,6 +28,7 @@
       <div class="nav-title">Ещё</div>
       <a href="{% url 'help' %}" class="nav-item{% if request.path == '/help/' %} active{% endif %}">{% icon "circle-help" %}<span>Справка</span></a>
       {% if user.is_staff %}<a href="{% url 'admin:index' %}" class="nav-item">{% icon "settings" %}<span>Настройки</span></a>{% endif %}
+      <div class="nav-version">Версия {{ app_version }}</div>
     </nav>
     <div class="sidebar-user">
       <span class="avatar">{{ user_initials }}</span>

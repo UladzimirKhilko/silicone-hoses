@@ -462,3 +462,4 @@ input[type=file] { border-style: dashed; background: var(--surface-2); }
 .content > .head + .table-wrap, .content > .head + table, .content > .filters + .table-wrap, .content > .filters + table, .content > form.filters + .table-wrap { margin-top: 0; }
 .china-form .actions input { flex: 1 1 220px; }
 .card h2 + .table-wrap { margin-top: 4px; }
+.nav-version { padding: 18px 10px 4px; font-size: 11.5px; color: var(--sidebar-muted); }
