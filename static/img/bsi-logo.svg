@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="БСИ">
+  <!-- Знак БСИ (по логотипу из документов предприятия): красная и синяя дуги, буквы БСИ -->
+  <circle cx="50" cy="50" r="49" fill="#fff"/>
+  <path fill="#E3191F" fill-rule="evenodd" d="M50 3a47 47 0 1 0 0 94a47 47 0 1 0 0-94zM54.5 8a42 42 0 1 1 0 84a42 42 0 1 1 0-84z"/>
+  <path fill="#2B2FE0" fill-rule="evenodd" d="M50 9a41 41 0 1 1 0 82a41 41 0 1 1 0-82zM46 12.5a37.5 37.5 0 1 0 0 75a37.5 37.5 0 1 0 0-75z"/>
+  <text x="50" y="62" text-anchor="middle" font-family="'Times New Roman', Times, Georgia, serif" font-size="33" fill="#111">БСИ</text>
+</svg>
