@@ -151,8 +151,12 @@ def draft_warnings(draft, rows=None):
         elif r.qty_pl is None and h.get("total_qty"):
             warnings.append(f"{r.invoice_name}: есть в инвойсе, нет в упаковочном листе.")
     if h.get("pl_source") == "ru":
-        warnings.append("Загружен русский упаковочный лист: в нём нет раскладки по коробкам — коробки для бирок взяты "
-                        "только там, где штуки делятся на коробки поровну. Для точных бирок загрузите китайский Packing List.")
+        # в русском листе по позиции — итог; если штуки не делятся на коробки поровну, размер коробки неизвестен
+        unknown = [r.pl_name for r in rows if r.qty_pl and
+                   sum(c["qty_per_carton"] * (c["cartons"] or 0) for c in r.cartons) + r.in_mixed != r.qty_pl]
+        if unknown:
+            warnings.append("Русский упаковочный лист: для " + ", ".join(unknown[:5]) + (f" и ещё {len(unknown) - 5}" if len(unknown) > 5 else "")
+                            + " неизвестно, сколько штук в коробке, — бирки по ним не посчитаются. Загрузите и китайский Packing List.")
     if h.get("total_qty") is not None:
         listed = sum(r.qty_pl or 0 for r in rows)
         if listed != h["total_qty"]:

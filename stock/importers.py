@@ -340,7 +340,7 @@ def parse_packing_list_ru(rows):
     pl = PackingList(title=" ".join(_text(c) for c in rows[head - 1] if _text(c)) if head else "", source="ru")
     if m := re.search(r"\b([A-Z]{2}\d{6,})\b", header_text):
         pl.invoice = m.group(1)
-    group = None
+    group, last_name = None, ""
     for row in rows[head + 1:]:
         name = _text(get(row, c_name))
         qty, cartons = _num(get(row, c_qty)), _num(get(row, c_ctn))
@@ -350,10 +350,13 @@ def parse_packing_list_ru(rows):
                 pl.total_qty, pl.total_cartons = int(qty), int(cartons) if cartons else None
                 pl.total_gross, pl.total_net = _num(get(row, c_gw)), _num(get(row, c_nw))
             continue
-        if not name or name.lower().startswith(("общий", "итого")):
+        if name.lower().startswith(("общий", "итого")):
             continue
-        if qty is None:
+        if not name and qty is not None and last_name:
+            name = last_name  # строка без названия — та же позиция в другой коробке (остаток: «75 шт, 1 коробка»)
+        if not name or qty is None:
             continue
+        last_name = name
         item = pl.items.setdefault(name, PackingItem(name=name))
         item.qty += int(qty)
         if cartons is None and group is not None:  # в той же коробке, что строка выше

@@ -558,3 +558,31 @@ def test_chinese_packing_list_preferred_over_russian(client_in, import_catalog):
     draft = client_in.session["receipt_import_draft"]
     assert draft["header"]["pl_source"] == "cn"
     assert any("русский упаковочный лист" in n for n in draft["notes"])
+
+
+# Как в поставке TS250869: в инвойсе «BSI BSI», в русском листе остаток — строкой без названия
+INVOICE_TS250869 = [
+    ["QINGHE COUNTY TUSHUN AUTO PARTS CO.,LTD."],
+    ["Инвойс №. TS9000002 к договору 09/185 от 05.11.2024г                   Дата: 2025/8/8"],
+    ["No.:", "ТНВЭД код", "Наименование", "К-во (шт)", "Цена за ед. (CNY)EXW", "Сумма (CNY)"],
+    [1, 3917310008, "Патрубок силиконовый BSI BSI D75L100-2", 2000, "￥6.67", "￥13,340.00"],
+    ["Итого:", None, None, 2000, None, "￥13,340.00"],
+]
+RU_PL_TS250869 = [
+    ["Упаковочный лист"],
+    ["Инвойс №", "TS9000002 к договору 09/185 от 02.11.2024 ", None, None, None, None, "Дата:", "2025-09-20"],
+    ["No.:", "Наименование (обозначение)", None, None, "К-вр\n(шт)", "Упаковка", "N.W\n(KGS)", "G.W\n(KGS)"],
+    [1, "Патрубок силиконовый BSI D75L100-2", None, None, 1925, 11, 244.2, 260.7],
+    [None, None, None, None, 75, 1, 10.2, 10.9],
+    ["Общий итог", None, None, None, 2000, 12, 254.4, 271.6],
+]
+
+
+def test_double_bsi_and_remainder_box_row(client_in, import_catalog):
+    p75, _, _ = import_catalog
+    client_in.post(reverse("stock:batch_import"), {"files": [_xlsx(INVOICE_TS250869), _xlsx(RU_PL_TS250869)]})
+    ctx = client_in.get(reverse("stock:batch_import_preview")).context
+    assert ctx["unmatched"] == 0 and len(ctx["rows"]) == 1 and ctx["warnings"] == []
+    row = ctx["rows"][0]
+    assert (row.product_id, row.qty_invoice, row.qty_pl, row.price) == (p75.pk, 2000, 2000, "6.67")
+    assert [(c["qty_per_carton"], c["cartons"], c["gross_kg"]) for c in row.cartons] == [(175, 11, "23.70"), (75, 1, "10.90")]
