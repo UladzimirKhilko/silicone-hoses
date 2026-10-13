@@ -223,10 +223,18 @@ def _read_factory_files(files):
 
     Возвращает (инвойс, упаковочный лист, заметки) или бросает ParseError с понятным текстом.
     """
-    invoices, packings, notes = [], [], []
+    import hashlib
+
+    invoices, packings, notes, seen = [], [], [], {}
     for f in files:
+        data = f.read()
+        digest = hashlib.sha256(data).hexdigest()
+        if digest in seen:  # один и тот же файл выбран дважды — берём один раз
+            notes.append(f"«{f.name}» — тот же файл, что «{seen[digest]}», пропущен.")
+            continue
+        seen[digest] = f.name
         try:
-            kind, doc = parse_document(read_rows(f, f.name))
+            kind, doc = parse_document(read_rows(BytesIO(data), f.name))
         except ParseError as e:
             raise ParseError(f"«{f.name}»: {e}")
         except Exception:  # битый или чужой файл — не падаем с 500, а объясняем

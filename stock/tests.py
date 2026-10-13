@@ -482,7 +482,9 @@ def test_detects_documents_by_content_any_names(client_in, import_catalog):
 
 
 def test_two_invoices_rejected(client_in, import_catalog):
-    resp = client_in.post(reverse("stock:batch_import"), {"files": [_xlsx(INVOICE_ROWS), _xlsx(INVOICE_ROWS)]}, follow=True)
+    other = [list(r) for r in INVOICE_ROWS]
+    other[1] = ["Инвойс №. TS9000009 к договору 09/185 от 05.11.2024                      Дата: 2025/04/01"]
+    resp = client_in.post(reverse("stock:batch_import"), {"files": [_xlsx(INVOICE_ROWS), _xlsx(other)]}, follow=True)
     assert "несколько инвойсов" in resp.content.decode()
 
 
@@ -586,3 +588,11 @@ def test_double_bsi_and_remainder_box_row(client_in, import_catalog):
     row = ctx["rows"][0]
     assert (row.product_id, row.qty_invoice, row.qty_pl, row.price) == (p75.pk, 2000, 2000, "6.67")
     assert [(c["qty_per_carton"], c["cartons"], c["gross_kg"]) for c in row.cartons] == [(175, 11, "23.70"), (75, 1, "10.90")]
+
+
+def test_same_file_twice_is_taken_once(client_in, import_catalog):
+    first, second = _xlsx(RU_PL_TS250869), _xlsx(RU_PL_TS250869)
+    second.name = "копия.xlsx"
+    resp = client_in.post(reverse("stock:batch_import"), {"files": [first, second, _xlsx(INVOICE_TS250869)]}, follow=True)
+    assert "несколько" not in resp.content.decode()
+    assert any("тот же файл" in n for n in client_in.session["receipt_import_draft"]["notes"])
