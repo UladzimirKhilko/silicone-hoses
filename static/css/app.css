@@ -483,3 +483,6 @@ tr.sub-row td.code { font-weight: 500; padding-left: 28px; }
 .import-table td:first-child { max-width: 200px; font-size: 13px; }
 .import-table td:last-child { min-width: 120px; font-size: 12.5px; }
 .import-table select { min-width: 220px; }
+#file-list { margin: 12px 0 0; }
+#file-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; font-size: 13.5px; }
+#file-list li .link { font-size: 15px; }

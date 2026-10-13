@@ -7,35 +7,53 @@
   найдёт изделия и сверит количества. Перед созданием поставки вы всё проверите.</p></div></div>
 <form method="post" enctype="multipart/form-data" class="card form import-form" id="import-form">{% csrf_token %}
   <label class="dropzone" id="dropzone">
-    <input type="file" name="files" multiple accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="files-input">
+    <input type="file" multiple accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="files-picker">
     <span class="dropzone-icon">{% icon "file-up" %}</span>
     <b>Перетащите файлы сюда или нажмите, чтобы выбрать</b>
-    <span class="muted small">Excel (.xlsx, .xls) или PDF · имена файлов любые · можно сразу несколько</span>
-    <ul class="file-list" id="file-list"></ul>
+    <span class="muted small">Excel (.xlsx, .xls) или PDF · имена любые · можно добавлять по одному или сразу несколько</span>
   </label>
+  <input type="file" name="files" multiple hidden id="files-input">
+  <ul class="file-list" id="file-list"></ul>
   <ul class="muted small hints">
     <li><b>Инвойс</b> — цены и количество (русский или английский).</li>
     <li><b>Упаковочный лист</b> — китайский Packing List (коробки и вес для бирок) или русский (итоги по изделиям).</li>
-    <li>Можно загрузить только один файл. PDF — тот, что сохранён из Excel или программы; скан-картинку прочитать нельзя.</li>
+    <li>Можно загрузить и только один из документов. PDF — тот, что сохранён из Excel или программы; скан-картинку прочитать нельзя.</li>
   </ul>
   <button class="btn primary">{% icon "file-up" %}Разобрать файлы</button>
 </form>
 <script>
 (function () {
-  var zone = document.getElementById("dropzone"), input = document.getElementById("files-input"), list = document.getElementById("file-list");
-  function show() {
+  // Файлы копятся: каждый выбор или перетаскивание добавляет к списку, ✕ — убрать файл.
+  var zone = document.getElementById("dropzone"), picker = document.getElementById("files-picker"),
+      input = document.getElementById("files-input"), list = document.getElementById("file-list"),
+      form = document.getElementById("import-form"), files = [];
+  function key(f) { return f.name + "|" + f.size + "|" + f.lastModified; }
+  function sync() {
+    var dt = new DataTransfer();
+    files.forEach(function (f) { dt.items.add(f); });
+    input.files = dt.files;
     list.innerHTML = "";
-    Array.prototype.forEach.call(input.files, function (f) {
-      var li = document.createElement("li");
-      li.textContent = f.name + " · " + Math.max(1, Math.round(f.size / 1024)) + " КБ";
-      list.appendChild(li);
+    files.forEach(function (f, i) {
+      var li = document.createElement("li"), name = document.createElement("span"), del = document.createElement("button");
+      name.textContent = f.name + " · " + Math.max(1, Math.round(f.size / 1024)) + " КБ";
+      del.type = "button"; del.className = "link danger"; del.textContent = "✕"; del.title = "Убрать файл";
+      del.addEventListener("click", function () { files.splice(i, 1); sync(); });
+      li.appendChild(name); li.appendChild(del); list.appendChild(li);
     });
-    zone.classList.toggle("has-files", input.files.length > 0);
+    zone.classList.toggle("has-files", files.length > 0);
   }
-  input.addEventListener("change", show);
+  function add(newFiles) {
+    var have = files.map(key);
+    Array.prototype.forEach.call(newFiles, function (f) { if (have.indexOf(key(f)) < 0) { files.push(f); have.push(key(f)); } });
+    sync();
+  }
+  picker.addEventListener("change", function () { add(picker.files); picker.value = ""; });
   ["dragenter", "dragover"].forEach(function (e) { zone.addEventListener(e, function (ev) { ev.preventDefault(); zone.classList.add("over"); }); });
   ["dragleave", "drop"].forEach(function (e) { zone.addEventListener(e, function () { zone.classList.remove("over"); }); });
-  zone.addEventListener("drop", function (ev) { ev.preventDefault(); input.files = ev.dataTransfer.files; show(); });
+  zone.addEventListener("drop", function (ev) { ev.preventDefault(); add(ev.dataTransfer.files); });
+  form.addEventListener("submit", function (ev) {
+    if (!files.length) { ev.preventDefault(); alert("Добавьте хотя бы один файл завода."); }
+  });
 })();
 </script>
 {% endblock %}
