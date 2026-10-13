@@ -501,3 +501,8 @@ tr.sub-row td.code { font-weight: 500; padding-left: 28px; }
 .login-form .brand-logo { width: 56px; height: 56px; }
 .dash-grid > *, .stack > *, .stack > .card, .report-grid > * { min-width: 0; }
 .chart-scroll { max-width: 100%; }
+.th-sub { font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); opacity: .85; }
+.money-cell .unit { display: block; color: var(--muted); font-size: 12.5px; }
+.money-cell b { display: block; font-weight: 650; }
+.stock-kpis { margin-bottom: 14px; }
+@media (max-width: 760px) { .money-cell .unit, .money-cell b { display: inline; } .money-cell .unit::after { content: " · "; } }

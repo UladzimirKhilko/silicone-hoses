@@ -179,3 +179,29 @@ def product_prices(product, balances):
             "left": balances.get((product.pk, line.batch_id), 0) if line.batch.status == Batch.Status.RECEIVED else None,
         })
     return rows
+
+
+# --- Закупка по остатку (для «Остатков») ---
+
+def purchase_figures(balances, product_ids, costs):
+    """{product_id: (цена за шт, сумма остатка)} и валюта.
+
+    Руководителю — учётная цена BYN (средняя по партиям, где лежит остаток; у партии без своей
+    учётной цены — последняя известная по изделию). Остальным — последняя цена завода, CNY.
+    """
+    have = defaultdict(int)
+    for (product_id, _), qty in balances.items():
+        if qty > 0:
+            have[product_id] += qty
+    result = {}
+    if costs:
+        by_product, _, _ = stock_value(balances)
+        for product_id, amount in by_product.items():
+            if have[product_id]:
+                result[product_id] = (money(amount / have[product_id]), money(amount))
+        return result, "BYN"
+    from sales.china import last_factory_prices
+
+    for product_id, price in last_factory_prices(list(product_ids)).items():
+        result[product_id] = (price, money(price * have[product_id]) if have[product_id] else None)
+    return result, "CNY"

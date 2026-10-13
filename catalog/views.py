@@ -39,13 +39,17 @@ def product_list(request):
     balances = batch_balances(ids)
     have, transit = on_hand(ids, balances), in_transit(ids)
     prices = sales_services.sale_prices((p.pk, p.customer_id) for p in products)
+    costs = pricing.can_see_costs(request.user)
+    purchase, currency = pricing.purchase_figures(balances, ids, costs)
     for p in products:
         p.on_hand, p.in_transit = have.get(p.pk, 0), transit.get(p.pk, 0)
         p.price, p.price_source = prices[p.pk, p.customer_id]
         p.stock_amount = p.on_hand * p.price if p.price is not None and p.on_hand else None
+        p.buy_price, p.buy_amount = purchase.get(p.pk, (None, None))
+        p.margin_amount = p.stock_amount - p.buy_amount if costs and p.stock_amount and p.buy_amount else None
     if request.GET.get("in_stock"):
         products = [p for p in products if p.on_hand > 0]
-    value = pricing.stock_value(balances) if pricing.can_see_costs(request.user) else None
+    value = pricing.stock_value(balances) if costs else None
     return render(
         request,
         "catalog/product_list.html",
@@ -53,6 +57,9 @@ def product_list(request):
             "products": products,
             "total_on_hand": sum(p.on_hand for p in products),
             "total_amount": sum((p.stock_amount or 0) for p in products),
+            "total_buy": sum((p.buy_amount or 0) for p in products),
+            "buy_currency": currency,
+            "total_margin": sum((p.margin_amount or 0) for p in products) if costs else None,
             "no_price_qty": sum(p.on_hand for p in products if p.on_hand and p.price is None),
             "stock_value": value[1] if value else None,
             "stock_value_missing": value[2] if value else 0,
