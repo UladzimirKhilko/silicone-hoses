@@ -21,8 +21,8 @@
 
 :root {
   color-scheme: light;
-  --brand-red: #e3191f;
-  --brand-blue: #2b35d8;
+  --brand-red: #D24A43;
+  --brand-blue: #4C75B8;
   --bg: #f4f6fa;
   --surface: #ffffff;
   --surface-2: #f8fafc;
@@ -32,21 +32,21 @@
   --text: #0f172a;
   --text-2: #334155;
   --muted: #64748b;
-  --accent: #2b35d8;
-  --accent-hover: #1f28b4;
-  --accent-soft: #eceefd;
+  --accent: #3f66a8;
+  --accent-hover: #345a96;
+  --accent-soft: #ebf1fa;
   --accent-text: #ffffff;
   --ok: #15803d; --ok-soft: #e7f6ec;
   --warn: #b45309; --warn-soft: #fff4e0;
   --bad: #c62828; --bad-soft: #fdecec;
   --info-soft: #eef4ff;
-  --sidebar: #0e1236;
-  --sidebar-text: #cfd3ec;
-  --sidebar-muted: #7d84ad;
-  --sidebar-hover: #1b2052;
-  --sidebar-active: #2b35d8;
-  --series-1: #2b35d8;
-  --series-2: #e3191f;
+  --sidebar: #0f1a2e;
+  --sidebar-text: #d2dbea;
+  --sidebar-muted: #8193b2;
+  --sidebar-hover: #1b2a45;
+  --sidebar-active: #3f66a8;
+  --series-1: #4c75b8;
+  --series-2: #d24a43;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
   --shadow: 0 1px 3px rgba(15, 23, 42, .06), 0 4px 16px rgba(15, 23, 42, .05);
   --shadow-lg: 0 12px 40px rgba(15, 23, 42, .18);
@@ -58,23 +58,23 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --bg: #0a0d22; --surface: #101633; --surface-2: #0d1230; --surface-3: #1a2150;
+    --bg: #0a111f; --surface: #0f1a2e; --surface-2: #0c1627; --surface-3: #1a2840;
     --line: #22304d; --line-strong: #2f3f60; --text: #e8edf6; --text-2: #c3cddd; --muted: #8b9ab3;
-    --accent: #6b78f2; --accent-hover: #8590f5; --accent-soft: #1c2150; --accent-text: #ffffff;
+    --accent: #5b8ae0; --accent-hover: #779ee7; --accent-soft: #172741; --accent-text: #ffffff;
     --ok: #4ade80; --ok-soft: #10301f; --warn: #fbbf24; --warn-soft: #33260b; --bad: #f87171; --bad-soft: #3a1518; --info-soft: #14213d;
-    --sidebar: #080b22; --sidebar-hover: #151a45; --sidebar-active: #2a32a8;
-    --series-1: #6b78f2; --series-2: #f0454b;
+    --sidebar: #08101f; --sidebar-hover: #14213a; --sidebar-active: #2f528e;
+    --series-1: #5b8ae0; --series-2: #e0645d;
     --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02); --shadow-lg: 0 12px 40px rgba(0,0,0,.5);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0a0d22; --surface: #101633; --surface-2: #0d1230; --surface-3: #1a2150;
+  --bg: #0a111f; --surface: #0f1a2e; --surface-2: #0c1627; --surface-3: #1a2840;
   --line: #22304d; --line-strong: #2f3f60; --text: #e8edf6; --text-2: #c3cddd; --muted: #8b9ab3;
-  --accent: #6b78f2; --accent-hover: #8590f5; --accent-soft: #1c2150; --accent-text: #ffffff;
+  --accent: #5b8ae0; --accent-hover: #779ee7; --accent-soft: #172741; --accent-text: #ffffff;
   --ok: #4ade80; --ok-soft: #10301f; --warn: #fbbf24; --warn-soft: #33260b; --bad: #f87171; --bad-soft: #3a1518; --info-soft: #14213d;
-  --sidebar: #080b22; --sidebar-hover: #151a45; --sidebar-active: #2a32a8;
-  --series-1: #6b78f2; --series-2: #f0454b;
+  --sidebar: #08101f; --sidebar-hover: #14213a; --sidebar-active: #2f528e;
+  --series-1: #5b8ae0; --series-2: #e0645d;
   --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02); --shadow-lg: 0 12px 40px rgba(0,0,0,.5);
 }
 
@@ -121,10 +121,10 @@ kbd { font: 600 11px/1 Inter, system-ui, sans-serif; padding: 3px 6px; border: 1
 .nav-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--sidebar-muted); padding: 16px 10px 6px; }
 .nav-item { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 8px; color: var(--sidebar-text); font-weight: 500;
   text-decoration: none !important; transition: background .12s, color .12s; }
-.nav-item .i { color: #8a90bd; }
+.nav-item .i { color: #8a9bba; }
 .nav-item:hover { background: var(--sidebar-hover); color: #fff; }
-.nav-item.active { background: var(--sidebar-active); color: #fff; box-shadow: inset 3px 0 0 var(--brand-red, #e3191f); }
-.nav-item.active .i { color: #fff; } .nav-item:hover .i { color: #b9bff7; }
+.nav-item.active { background: var(--sidebar-active); color: #fff; box-shadow: inset 3px 0 0 var(--brand-red, #D24A43); }
+.nav-item.active .i { color: #fff; } .nav-item:hover .i { color: #b7c8e6; }
 .sidebar-user { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid rgba(148, 163, 184, .14); }
 .sidebar-user form { margin: 0; }
 .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #1e293b; color: #e2e8f0; font-size: 12px; font-weight: 700; flex: none; }
@@ -494,10 +494,10 @@ tr.sub-row td.code { font-weight: 500; padding-left: 28px; }
 .brand-logo.big { width: 76px; height: 76px; }
 .topbar-brand .brand-logo { width: 32px; height: 32px; box-shadow: none; border: 1px solid var(--line); }
 .brand-text small { letter-spacing: .01em; }
-.sidebar::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--brand-red, #e3191f) 0 50%, var(--brand-blue, #2b35d8) 50% 100%); }
-.btn.primary { box-shadow: 0 1px 2px rgba(43, 53, 216, .3), inset 0 1px 0 rgba(255,255,255,.12); }
-.login-art { background: radial-gradient(1100px 600px at 0% 0%, #2b35d8 0%, transparent 55%), radial-gradient(900px 520px at 100% 100%, #e3191f 0%, transparent 50%), #0e1236 !important; }
-.login-art li .i { color: #c3c8ff !important; }
+.sidebar::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--brand-red, #D24A43) 0 50%, var(--brand-blue, #4C75B8) 50% 100%); }
+.btn.primary { box-shadow: 0 1px 2px rgba(63, 102, 168, .3), inset 0 1px 0 rgba(255,255,255,.12); }
+.login-art { background: radial-gradient(1100px 600px at 0% 0%, #4C75B8 0%, transparent 55%), radial-gradient(900px 520px at 100% 100%, #D24A43 0%, transparent 50%), #0f1a2e !important; }
+.login-art li .i { color: #c9d7ef !important; }
 .login-form .brand-logo { width: 56px; height: 56px; }
 .dash-grid > *, .stack > *, .stack > .card, .report-grid > * { min-width: 0; }
 .chart-scroll { max-width: 100%; }
