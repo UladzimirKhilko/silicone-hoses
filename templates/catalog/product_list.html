@@ -15,14 +15,13 @@
 <div class="kpis stock-kpis">
   <div class="kpi"><div class="kpi-label"><span class="kpi-icon">{% icon "boxes" %}</span>На складе</div>
     <div class="kpi-value">{{ total_on_hand|money:0 }}<small>шт</small></div><div class="kpi-sub">{{ products|length }} изделий в списке</div></div>
-  <div class="kpi"><div class="kpi-label"><span class="kpi-icon warn">{% icon "ship" %}</span>По закупке</div>
-    <div class="kpi-value">{{ total_buy|money:0 }}<small>{{ buy_currency }}</small></div>
-    <div class="kpi-sub">{% if buy_currency == "BYN" %}учётная цена (с доставкой и таможней){% else %}цена завода{% endif %}</div></div>
-  <div class="kpi"><div class="kpi-label"><span class="kpi-icon ok">{% icon "truck" %}</span>По реализации</div>
-    <div class="kpi-value">{{ total_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">без НДС, по спецификациям и продажам</div></div>
-  {% if total_margin is not None %}
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon ok">{% icon "truck" %}</span>Сумма по реализации</div>
+    <div class="kpi-value">{{ total_amount|money:0 }}<small>BYN</small></div><div class="kpi-sub">остаток × цена реализации, без НДС</div></div>
+  {% if total_landed is not None %}
+  <div class="kpi"><div class="kpi-label"><span class="kpi-icon warn">{% icon "wallet" %}</span>Сумма по учётной</div>
+    <div class="kpi-value">{{ total_landed|money:0 }}<small>BYN</small></div><div class="kpi-sub">остаток × учётная цена</div></div>
   <div class="kpi"><div class="kpi-label"><span class="kpi-icon ok">{% icon "trending-up" %}</span>Разница</div>
-    <div class="kpi-value">{{ total_margin|money:0 }}<small>BYN</small></div><div class="kpi-sub">реализация − закупка по остатку</div></div>
+    <div class="kpi-value">{{ total_margin|money:0 }}<small>BYN</small></div><div class="kpi-sub">реализация − учётная, по позициям с обеими ценами</div></div>
   {% endif %}
 </div>
 
@@ -50,23 +49,24 @@
   </div>
   <div class="table-wrap">
   <table class="products product-table">
-    <thead><tr><th class="check-col"><input type="checkbox" data-check-all aria-label="Выбрать все"></th><th>Изделие</th><th>Заказчик</th><th>Статус</th><th class="num">Остаток</th><th class="num">Закупка, {{ buy_currency }}<div class="th-sub">цена · сумма</div></th><th class="num">Реализация, BYN<div class="th-sub">цена · сумма</div></th><th class="num">В пути</th><th></th></tr></thead>
+    <thead><tr><th class="check-col"><input type="checkbox" data-check-all aria-label="Выбрать все"></th><th>Изделие</th><th>Заказчик</th><th class="num">Остаток</th><th class="num">Цена закупки<div class="th-sub">завод, CNY</div></th>{% if can_see_costs %}<th class="num">Учётная цена<div class="th-sub">склад, BYN</div></th>{% endif %}<th class="num">Цена реализации<div class="th-sub">BYN без НДС</div></th><th class="num">Сумма<div class="th-sub">по реализации, BYN</div></th><th class="num">В пути</th><th></th></tr></thead>
     <tbody>
     {% for p in products %}
       <tr data-href="{{ p.get_absolute_url }}">
         <td class="check"><input type="checkbox" name="ids" value="{{ p.pk }}" aria-label="Выбрать {{ p.code }}"></td>
         <td class="code"><a href="{{ p.get_absolute_url }}">{% if p.color %}<span class="dot dot-{{ p.color }}" title="{{ p.get_color_display }}"></span>{% endif %}{{ p.code }}</a>
-          <div class="sub">{% if p.yapib %}ЯПИБ {{ p.yapib }} · {% endif %}{{ p.get_kind_display|default:"" }} {{ p.size_label }}</div></td>
+          <div class="sub">{% if p.yapib %}ЯПИБ {{ p.yapib }} · {% endif %}{{ p.get_kind_display|default:"" }} {{ p.size_label }} <span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></div></td>
         <td data-label="Заказчик">{{ p.customer|default:"—" }}</td>
-        <td data-label="Статус"><span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></td>
         <td data-label="Остаток" class="num stock-cell {% if p.on_hand %}strong{% else %}muted{% endif %}">{{ p.on_hand|money:0 }}</td>
-        <td data-label="Закупка" class="num money-cell">{% if p.buy_price is not None %}<span class="unit">{% if buy_currency == "CNY" %}{{ p.buy_price|price }}{% else %}{{ p.buy_price|money }}{% endif %}</span>{% if p.buy_amount %}<b>{{ p.buy_amount|money }}</b>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
-        <td data-label="Реализация" class="num money-cell" {% if p.price_source %}title="Цена: {{ p.price_source }}"{% endif %}>{% if p.price is not None %}<span class="unit">{{ p.price|money }}</span>{% if p.stock_amount %}<b>{{ p.stock_amount|money }}</b>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td data-label="Цена закупки, CNY" class="num">{{ p.factory_price|price }}</td>
+        {% if can_see_costs %}<td data-label="Учётная, BYN" class="num">{{ p.landed_price|money }}</td>{% endif %}
+        <td data-label="Цена реализации" class="num" {% if p.price_source %}title="{{ p.price_source }}"{% endif %}>{{ p.price|money }}</td>
+        <td data-label="Сумма" class="num {% if p.stock_amount %}strong{% else %}muted{% endif %}">{% if p.stock_amount %}{{ p.stock_amount|money }}{% else %}—{% endif %}</td>
         <td data-label="В пути" class="num muted">{% if p.in_transit %}{{ p.in_transit|money:0 }}{% else %}—{% endif %}</td>
         <td class="row-end">{% with d=p.drawing_files.all %}{% if d %}<span title="Есть чертёж">{% icon "image" "muted" %}</span>{% endif %}{% endwith %}{% icon "chevron-right" "muted" %}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="8" class="empty">Ничего не найдено.</td></tr>
+      <tr><td colspan="9" class="empty">Ничего не найдено.</td></tr>
     {% endfor %}
     </tbody>
   </table>

@@ -178,4 +178,4 @@ def test_stock_list_price_and_amount(client_in, mtz, product):
     assert resp.context["total_amount"] == Decimal("630.00")
     ws = _sheet(client_in.get(reverse("stock:stock_export")))
     row = next(r for r in ws.iter_rows(min_row=2, values_only=True) if r[0] == product.code)
-    assert row[6] == 90 and row[9:12] == (7.0, 630.0, "последняя продажа")  # реализация; закупка — колонки 8–9
+    assert row[6] == 90 and row[8:11] == (7.0, 630.0, "последняя продажа")  # после цены закупки (завод, CNY)

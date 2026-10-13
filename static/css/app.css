@@ -506,3 +506,4 @@ tr.sub-row td.code { font-weight: 500; padding-left: 28px; }
 .money-cell b { display: block; font-weight: 650; }
 .stock-kpis { margin-bottom: 14px; }
 @media (max-width: 760px) { .money-cell .unit, .money-cell b { display: inline; } .money-cell .unit::after { content: " · "; } }
+.product-table .sub .badge { font-size: 11px; line-height: 16px; padding: 0 7px; margin-left: 4px; }

@@ -146,3 +146,12 @@ def test_batch_prices_calc_and_manual(boss, product, mtz):
 def test_superuser_sees_costs(client, django_user_model, product):
     client.force_login(django_user_model.objects.create_superuser("root", password="pass12345"))
     assert client.get(reverse("stock:profit_report")).status_code == 200
+
+
+def test_stock_list_three_prices(boss, product, mtz):
+    received(product, 100, dt.date(2025, 1, 1), price_cny=Decimal("6.6747474747"), landed=Decimal("3.47"))
+    ship(mtz, product, 10, Decimal("5.00"))
+    p = next(x for x in boss.get(reverse("catalog:product_list")).context["products"] if x.pk == product.pk)
+    assert (p.factory_price, p.landed_price, p.price, p.stock_amount) == (Decimal("6.6747474747"), Decimal("3.47"), Decimal("5.00"), Decimal("450.00"))
+    html = boss.get(reverse("catalog:product_list")).content.decode()
+    assert "Учётная цена" in html and "6,6747" in html and "3,47" in html and "450,00" in html

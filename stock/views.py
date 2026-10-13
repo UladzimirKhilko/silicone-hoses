@@ -620,23 +620,27 @@ def stock_export(request):
     from sales.services import sale_prices
 
     prices = sale_prices((p.pk, p.customer_id) for p in products)
-    purchase, currency = pricing.purchase_figures(balances, ids, costs)
-    buy = "учётная" if costs else "завода"
-    ws.append(["Код", "ЯПИБ", "Заказчик", "Тип", "Размеры", "Цвет", "Остаток, шт",
-               f"Цена закупки ({buy}), {currency}", f"Сумма закупки, {currency}",
-               "Цена реализации без НДС, BYN", "Сумма реализации, BYN", "Откуда цена реализации", "В пути, шт"])
+    factory, _ = pricing.purchase_figures(balances, ids, costs=False)
+    landed = pricing.purchase_figures(balances, ids, costs=True)[0] if costs else {}
+    ws.append(["Код", "ЯПИБ", "Заказчик", "Тип", "Размеры", "Цвет", "Остаток, шт", "Цена закупки (завод), CNY"]
+              + (["Учётная цена (склад), BYN"] if costs else [])
+              + ["Цена реализации без НДС, BYN", "Сумма по реализации, BYN", "Откуда цена реализации", "В пути, шт"]
+              + (["Сумма по учётной, BYN"] if costs else []))
     for p in products:
         price, source = prices[p.pk, p.customer_id]
-        buy_price, buy_amount = purchase.get(p.pk, (None, None))
         qty = have.get(p.pk, 0)
+        f_price = factory.get(p.pk, (None, None))[0]
+        l_price, l_amount = landed.get(p.pk, (None, None))
         ws.append([p.code, p.yapib or "", p.customer.name if p.customer_id else "", p.get_kind_display(), p.size_label,
-                   p.get_color_display(), qty, float(buy_price) if buy_price is not None else None,
-                   float(buy_amount) if buy_amount else None, float(price) if price is not None else None,
-                   float(price * qty) if price is not None and qty else None, source, transit.get(p.pk, 0)])
-    for row in ws.iter_rows(min_row=2, min_col=8, max_col=11):
+                   p.get_color_display(), qty, float(f_price) if f_price is not None else None]
+                  + ([float(l_price) if l_price is not None else None] if costs else [])
+                  + [float(price) if price is not None else None, float(price * qty) if price is not None and qty else None,
+                     source, transit.get(p.pk, 0)]
+                  + ([float(l_amount) if l_amount else None] if costs else []))
+    for row in ws.iter_rows(min_row=2, min_col=8, max_col=14):
         for cell in row:
             cell.number_format = "#,##0.00"
-    for col, width in zip("ABCDEFGHIJKLM", (28, 10, 14, 16, 26, 10, 12, 16, 16, 16, 16, 20, 12)):
+    for col, width in zip("ABCDEFGHIJKLMN", (28, 10, 14, 16, 26, 10, 12, 16, 16, 16, 16, 20, 12, 16)):
         ws.column_dimensions[col].width = width
     return _xlsx_response(wb, f"ostatki-{dt.date.today():%Y-%m-%d}.xlsx")
 
