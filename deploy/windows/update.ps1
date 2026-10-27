@@ -32,6 +32,14 @@ Run $venvPy @("-m", "pip", "install", "-r", "requirements.txt", "-q")
 Run $venvPy @("manage.py", "migrate", "--noinput")
 Run $venvPy @("manage.py", "setup_roles")
 Run $venvPy @("manage.py", "import_cartons")
+Write-Host "Докачиваю документы с Яндекс.Диска (приходы из папки «Закупки»)…"
+& $venvPy manage.py fetch_yandex "$Root\data\source"
+if ($LASTEXITCODE -ne 0) { Write-Host "Не все файлы скачались — недостающие докачаются при следующем обновлении." -ForegroundColor Yellow }
+if (Test-Path "$Root\data\source\Закупки") {
+    # уже загруженные поставки пропускаются — повторный запуск безопасен
+    & $venvPy manage.py import_purchases "$Root\data\source\Закупки" --apply
+    if ($LASTEXITCODE -ne 0) { Write-Host "Часть приходов не загрузилась — пришлите текст выше разработчику." -ForegroundColor Yellow }
+}
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Start-ScheduledTask -TaskName "Patrubki BSI"
 $version = & $venvPy -c "import hoses.version as v; print(v.VERSION)"

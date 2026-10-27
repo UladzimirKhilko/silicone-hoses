@@ -99,6 +99,14 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "История МТЗ уже перенесена — пропускаю"
 }
 Run $venvPy @("manage.py", "import_cartons")
+Write-Host "Докачиваю документы с Яндекс.Диска (приходы из папки «Закупки»)…"
+& $venvPy manage.py fetch_yandex "$Root\data\source"
+if ($LASTEXITCODE -ne 0) { Write-Host "Не все файлы скачались — недостающие докачаются при следующем обновлении." -ForegroundColor Yellow }
+if (Test-Path "$Root\data\source\Закупки") {
+    # уже загруженные поставки пропускаются — повторный запуск безопасен
+    & $venvPy manage.py import_purchases "$Root\data\source\Закупки" --apply
+    if ($LASTEXITCODE -ne 0) { Write-Host "Часть приходов не загрузилась — пришлите текст выше разработчику." -ForegroundColor Yellow }
+}
 
 # --- 4. Администратор ---
 Step "4/5 Администратор"

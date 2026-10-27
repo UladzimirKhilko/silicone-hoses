@@ -11,7 +11,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from catalog.codes import normalize_name
+from catalog.codes import normalize_name, parse_parametric
 from catalog.models import Product, ProductAlias, find_product
 
 from .models import Batch, CartonSpec, ReceiptLine
@@ -66,9 +66,12 @@ def build_draft(invoice=None, packing=None):
     for line in (invoice.lines if invoice else []):
         row = row_for(line.name, "inv")
         row.invoice_name = row.invoice_name or line.name
-        row.qty_invoice = (row.qty_invoice or 0) + line.qty
-        if line.price is not None:
-            row.price = str(line.price)
+        qty, price = line.qty, line.price
+        if is_meters(line.unit):
+            qty, price, row.note = meters_to_pieces(row.product_id, qty, price)
+        row.qty_invoice = (row.qty_invoice or 0) + qty
+        if price is not None:
+            row.price = str(price)
     for item in (packing.items.values() if packing else []):
         row = row_for(item.name, "pl")
         row.pl_name, row.pl_mark = item.name, item.mark
@@ -91,6 +94,23 @@ def build_draft(invoice=None, packing=None):
                       mixed=[(mark, items) for mark, items in packing.mixed_cartons], pl_source=packing.source)
         header.setdefault("invoice", packing.invoice)
     return {"header": header, "rows": [asdict(r) for r in rows]}
+
+
+def is_meters(unit):
+    unit = (unit or "").strip().lower()
+    return unit.startswith(("м", "m")) and not unit.startswith(("мм", "mm"))
+
+
+def meters_to_pieces(product_id, qty, price):
+    """Рукав продаётся отрезками длины L (BSI D10L10000-2 — 10 м). Инвойс в метрах → штуки
+    и цена за штуку. Не делится нацело или длина неизвестна — оставляем как есть с пометкой."""
+    code = Product.objects.filter(pk=product_id).values_list("code", flat=True).first()
+    parsed = parse_parametric(code) if code else None
+    length = parsed.l1 / 1000 if parsed and parsed.l1 >= 1000 else None
+    if length and qty % length == 0:
+        pieces = int(qty / length)
+        return pieces, (price * length if price is not None else None), f"в инвойсе {qty} м → {pieces} шт по {length.normalize():f} м"
+    return qty, price, f"в инвойсе {qty} м — проверьте количество в штуках"
 
 
 def _absorb(target, row):
@@ -164,12 +184,8 @@ def draft_warnings(draft, rows=None):
     return warnings
 
 
-@transaction.atomic
-def create_batch(draft, choices, header, remember=True, user=None, target=None):
-    """choices: {row.key: product_id} для строк, где изделие выбрал человек.
-    target — поставка «в пути» (заказ в Китай), которую заменяет пришедший инвойс.
-    Возвращает партию «в пути»."""
-    rows = rows_from(draft)
+def merge_rows(rows, choices):
+    """{product_id: {inv, pl, price, cartons, names}} — строки инвойса и PL одного изделия вместе."""
     merged = {}
     for r in rows:
         product_id = r.product_id or choices.get(r.key)
@@ -185,6 +201,29 @@ def create_batch(draft, choices, header, remember=True, user=None, target=None):
         m["cartons"] += r.cartons
         m["names"] += [(r.invoice_name, ProductAlias.Source.INVOICE), (r.pl_name, ProductAlias.Source.PACKING_LIST),
                        (r.pl_mark, ProductAlias.Source.CARTON)]
+    return merged
+
+
+def save_cartons(batch, product, cartons, replace=True):
+    """Коробки изделия в партии из упаковочного листа. replace=False — не трогать уже введённые."""
+    for c in cartons:
+        if c["gross_kg"] is None:
+            continue
+        values = {"gross_kg": Decimal(c["gross_kg"]), "net_kg": Decimal(c["net_kg"]) if c["net_kg"] else None,
+                  "cartons": c["cartons"], "source": f"упаковочный лист завода {batch.invoice}".strip()}
+        lookup = {"batch": batch, "product": product, "qty_per_carton": c["qty_per_carton"]}
+        if replace:
+            CartonSpec.objects.update_or_create(**lookup, defaults=values)
+        else:
+            CartonSpec.objects.get_or_create(**lookup, defaults=values)
+
+
+@transaction.atomic
+def create_batch(draft, choices, header, remember=True, user=None, target=None):
+    """choices: {row.key: product_id} для строк, где изделие выбрал человек.
+    target — поставка «в пути» (заказ в Китай), которую заменяет пришедший инвойс.
+    Возвращает партию «в пути»."""
+    merged = merge_rows(rows_from(draft), choices)
     if target is not None:
         if target.status != Batch.Status.IN_TRANSIT:
             raise ValueError("Поставка уже принята — заменить её состав нельзя.")
@@ -203,21 +242,14 @@ def create_batch(draft, choices, header, remember=True, user=None, target=None):
         product = products[product_id]
         ReceiptLine.objects.create(batch=batch, product=product, qty_expected=m["inv"] if m["inv"] is not None else m["pl"],
                                    price_cny=Decimal(m["price"]) if m["price"] else None)
-        for c in m["cartons"]:
-            if c["gross_kg"] is None:
-                continue
-            CartonSpec.objects.update_or_create(
-                batch=batch, product=product, qty_per_carton=c["qty_per_carton"],
-                defaults={"gross_kg": Decimal(c["gross_kg"]), "net_kg": Decimal(c["net_kg"]) if c["net_kg"] else None,
-                          "cartons": c["cartons"], "source": f"упаковочный лист завода {batch.invoice}".strip()},
-            )
+        save_cartons(batch, product, m["cartons"])
         if remember:
             for name, source in m["names"]:
-                _remember(product, name, source, user)
+                remember_alias(product, name, source, user)
     return batch
 
 
-def _remember(product, name, source, user):
+def remember_alias(product, name, source, user):
     """Запомнить написание как синоним — если оно новое и ни с чем не конфликтует."""
     if not name or find_product(name) == product:
         return

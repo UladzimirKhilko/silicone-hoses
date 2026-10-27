@@ -1,0 +1,280 @@
+"""Приходы из Китая по документам папки «Закупки» на Яндекс.Диске (разобрано 27.10.2026).
+
+    python manage.py fetch_yandex data/source                      # докачать папку
+    python manage.py import_purchases data/source/Закупки          # проверка, ничего не меняет
+    python manage.py import_purchases data/source/Закупки --apply  # записать
+
+Что делает:
+- поставки, которые уже перенесены из Excel МТЗ (партии без номера инвойса), дополняет:
+  номер инвойса, точные цены завода, коробки из упаковочного листа, недостающие строки
+  (образцы ГСМ/ММЗ/БелАЗ в TS2407202). Количества не меняет — расхождения только показывает;
+- остальные создаёт: принятые — с датой приёмки, заказы в пути и на производстве — «в пути»;
+- изделия, которых нет в каталоге, создаёт со статусом «чертёж ожидается».
+
+Повторный запуск ничего не дублирует: партия с таким инвойсом уже есть — пропускается.
+Ошибки в документах завода исправлены явно (FIXES) и записаны в примечание партии.
+"""
+
+import datetime as dt
+import unicodedata
+from dataclasses import asdict, dataclass, field
+from decimal import Decimal
+from pathlib import Path
+
+from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+from django.db.models import F
+
+from catalog.codes import normalize_name, parse_parametric
+from catalog.models import Customer, Product
+from stock import receipt_import
+from stock.importers import ParseError, parse_document, read_rows
+from stock.models import Batch, ReceiptLine
+
+
+@dataclass
+class Purchase:
+    invoice: str
+    customer: str | None  # None — в поставке изделия разных заказчиков
+    files: tuple  # инвойс, упаковочный лист — пути внутри «Закупок»
+    received: str | None = None  # дата приёмки; None — ещё в пути / на производстве
+    existing: str | None = None  # дата приёмки партии, перенесённой из Excel без номера инвойса
+    lines: bool = True  # False — строки инвойса без кодов изделий, берём только номер
+    only_invoice_items: bool = False  # упаковочный лист общий на две поставки
+    pick: dict = field(default_factory=dict)  # код → заказчик для кодов, которые есть у нескольких
+    fixes: dict = field(default_factory=dict)  # опечатка в документе → правильный код
+    notes: str = ""
+
+
+MTZ = "МТЗ"
+PURCHASES = [
+    Purchase("TS231230", MTZ, ("МТЗ/Опытные образцы/русс инвойс с доставкой.xlsx",
+                               "МТЗ/Опытные образцы/RUSупаковочный лист с печатью.xlsx"),
+             existing="2024-03-04", lines=False),
+    Purchase("TS2407202", None, ("МТЗ/Опытная партия/Всего_русс инвойс_ноябрь.xlsx",
+                                 "МТЗ/Опытная партия/Packing List-23ggbykv-TS2407202 (2).xls"),
+             existing="2025-02-08", pick={"90-D60L100/100-2": "Гомсельмаш"},
+             notes="Добавлены образцы ГСМ, ММЗ, БелАЗ по инвойсу TS2407202."),
+    Purchase("TS2506227", MTZ, ("МТЗ/Опытная партия -воздух + МАЗ-МАН/Invoice_TS2506227_русс.pdf",
+                                "МТЗ/Опытная партия -воздух + МАЗ-МАН/TS2503154 & TS2506227_RUSупаковочный лист.xlsx"),
+             existing="2025-09-18", only_invoice_items=True),
+    Purchase("TS250869", MTZ, ("МТЗ/август25/No_4_Proforma_Invoice_Счет_за_силиконовую_трубку_2025_8_8.xlsx",
+                               "МТЗ/август25/Packing List-23ggbykv-TS250869.xls"), existing="2025-11-04"),
+    Purchase("TS250963", MTZ, ("МТЗ/сентябрь 25/TS250963_RUS_invoice.pdf",
+                               "МТЗ/сентябрь 25/Updated Packing List-23ggbykv-TS250963.xls"), existing="2025-11-19"),
+    Purchase("TS2503154", MTZ, ("МТЗ/Опытная партия -воздух + МАЗ-МАН/TS2503154русс инвойс_опытн.pdf",
+                                "МТЗ/Опытная партия -воздух + МАЗ-МАН/Packing List-23ggbykv-TS2503148 (2).xls"),
+             received="2025-09-18",
+             notes="Опытная партия «воздух + МАЗ-МАН» по договору 09/185 (МТЗ). В инвойсе опечатка в номере — TS2403154, "
+                   "китайский упаковочный лист — под номером TS2503148. Пришла вместе с TS2506227 "
+                   "(общий русский упаковочный лист от 30.07.2025)."),
+    Purchase("TS2601093", MTZ, ("МТЗ/Опытные образцы март 26/Invoice_TS2601093.pdf",
+                                "МТЗ/Опытные образцы март 26/TS2601093_RUSупаковочный лист.xlsx"),
+             notes="Опытные образцы. Упаковочный лист от 24.09.2026 — похоже, едут вместе с TS2608242."),
+    Purchase("TS260595", MTZ, ("МТЗ/май26/Proforma_Invoice_TS260595_рус.pdf",
+                               "МТЗ/май26/Packing List-23ggbykv-TS260695 (3).xls"), received="2026-06-19",
+             notes="Упаковочный лист завода — под номером TS260695. Дата приёмки — дата упаковочного листа "
+                   "(19.06.2026), фактическую уточните."),
+    Purchase("TS2608242", MTZ, ("МТЗ/август 26 в дороге(доставка)/No.11-Proforma Invoice-TS2608242-2026.8.31.pdf",
+                                "МТЗ/август 26 в дороге(доставка)/Packing List-23ggbykv-TS2608242.xls"),
+             notes="В дороге (упаковочный лист от 28.09.2026)."),
+    Purchase("TS260294", "Амкадор", ("Амкадор -Пинск/этап 1/Proforma_Invoice_TS260294_рус_1этап.xlsx",
+                                     "Амкадор -Пинск/этап 1/Packing List-23ggbykv-TS260294.xls"), received="2026-04-21",
+             notes="Амкадор (Пинск), этап 1. Дата приёмки — дата упаковочного листа (21.04.2026), фактическую уточните."),
+    Purchase("TS2605143", "Амкадор", ("Амкадор -Пинск/2 этап/Order No.8-Proforma_Invoice_рус_2этап.pdf",
+                                      "Амкадор -Пинск/2 этап/Packing List-23ggbykv-TS2605143 (3).xls"), received="2026-06-19",
+             notes="Амкадор (Пинск), этап 2. Дата приёмки — дата упаковочного листа (19.06.2026), фактическую уточните."),
+    Purchase("JH-J-20261009", "Амкадор", ("Амкадор/Заказ в производстве/Инвойс JINHU JH-J-20261009 v2 1 стр..pdf",),
+             notes="Заказ на производстве, завод XINGTAI JINHU TECHNOLOGY."),
+    Purchase("TS2406188", "БелАЗ", ("Белаз/июнь26/TS2406188_русс инвойс.pdf", "Белаз/июнь26/TS2406188_RUSупаковочный лист.pdf"),
+             received="2026-07-15", fixes={"SI D89L1000-2": "BSI D89L1000-2", "BSI D50L100-2": "BSI D89L1000-2"},
+             notes="В упаковочном листе завода D89L1000-2 записан двумя строками с опечатками: «SI D89L1000-2» (165 шт) "
+                   "и «BSI D50L100-2» (70 шт) — по инвойсу это 235 шт D89L1000-2. Дата приёмки — дата упаковочного "
+                   "листа (15.07.2026), фактическую уточните."),
+    Purchase("JH-J-20260925", "БелАЗ", ("Белаз/сентябрь 2026 _ на производстве/Инвойс_JH-J-20260925_рус.xlsx",),
+             notes="Заказ на производстве, завод XINGTAI JINHU TECHNOLOGY. В инвойсе количество в метрах — "
+                   "переведено в штуки по длине изделия (L10000 — 10 м, L5000 — 5 м, L1000 — 1 м), цена — за штуку."),
+]
+
+
+def _path_key(text):
+    """Имена с Яндекс.Диска: буква «й» бывает разложена (NFD), Windows обрезает пробелы в конце папок."""
+    parts = unicodedata.normalize("NFC", str(text)).replace("\\", "/").split("/")
+    return "/".join(p.strip() for p in parts).lower()
+
+
+class Rollback(Exception):
+    pass
+
+
+class Command(BaseCommand):
+    help = "Загрузить приходы из Китая по документам папки «Закупки»"
+
+    def add_arguments(self, parser):
+        parser.add_argument("folder", help="Папка «Закупки» (или папка, в которой она лежит)")
+        parser.add_argument("--apply", action="store_true", help="Записать в базу (без него — только проверка)")
+
+    def handle(self, folder, apply, **opts):
+        root = Path(folder)
+        if (root / "Закупки").is_dir():
+            root = root / "Закупки"
+        if not root.is_dir():
+            raise CommandError(f"Нет папки {root}")
+        self.files = {_path_key(p.relative_to(root).as_posix()): p for p in root.rglob("*") if p.is_file()}
+        self.errors = []
+        try:
+            with transaction.atomic():
+                for purchase in PURCHASES:
+                    self.stdout.write(f"\n{purchase.invoice}")
+                    try:
+                        with transaction.atomic():
+                            self.load(purchase)
+                    except (ValueError, ParseError, OSError) as e:
+                        self.errors.append(f"{purchase.invoice}: {e}")
+                        self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
+                if not apply:
+                    raise Rollback
+        except Rollback:
+            self.stdout.write(self.style.WARNING("\nПроверка: в базу ничего не записано. Для записи добавьте --apply."))
+        else:
+            self.stdout.write(self.style.SUCCESS("\nЗаписано."))
+        if self.errors:
+            raise CommandError(f"Не загружено {len(self.errors)}: " + "; ".join(self.errors))
+
+    # --- одна поставка ---
+
+    def load(self, purchase):
+        docs = [self.parse(name) for name in purchase.files]
+        invoice = next(d for kind, d in docs if kind == "invoice")
+        packing = next((d for kind, d in docs if kind == "packing"), None)
+        customer = Customer.objects.get(name=purchase.customer) if purchase.customer else None
+        existing = self.existing(purchase)
+        if existing is None and Batch.objects.filter(invoice=purchase.invoice).exists():
+            self.stdout.write("  уже есть — пропускаю")
+            return
+        if purchase.existing and existing is None:
+            raise ValueError(f"не нашёл партию от {purchase.existing} — сначала перенесите Excel МТЗ")
+
+        rows = receipt_import.rows_from(receipt_import.build_draft(invoice, packing))
+        if purchase.lines:
+            rows = self.resolve(purchase, rows, customer, existing)
+            products = Product.objects.in_bulk([r.product_id for r in rows])
+            for product_id, m in receipt_import.merge_rows(rows, {}).items():
+                if m["inv"] is not None and m["pl"] is not None and m["inv"] != m["pl"]:
+                    self.stdout.write(f"  · {products[product_id].code}: в инвойсе {m['inv']} шт, в упаковочном листе {m['pl']} шт")
+        if existing is not None:
+            self.enrich(purchase, existing, rows)
+        else:
+            self.create(purchase, rows)
+
+    def parse(self, name):
+        path = self.files.get(_path_key(name))
+        if path is None:
+            raise ValueError(f"нет файла «{name}» — докачайте папку командой fetch_yandex")
+        with open(path, "rb") as fh:
+            return parse_document(read_rows(fh, path.name))
+
+    def existing(self, purchase):
+        if not purchase.existing:
+            return None
+        same_day = Batch.objects.filter(received_date=purchase.existing)
+        batch = (same_day.filter(invoice=purchase.invoice).first() or same_day.filter(invoice="").first()
+                 or Batch.objects.filter(invoice=purchase.invoice).first())
+        for twin in Batch.objects.filter(invoice=purchase.invoice).exclude(pk=getattr(batch, "pk", None)):
+            self.stdout.write(self.style.WARNING(f"  · есть ещё {twin} ({twin.get_status_display()}) — похоже, загружена "
+                                                 "повторно вручную; проверьте и удалите лишнюю"))
+        return batch
+
+    def resolve(self, purchase, rows, customer, existing=None):
+        """Изделие каждой строки: по коду с учётом заказчика поставки (в смешанной поставке — то, что уже
+        есть в партии); нет в каталоге — новое."""
+        fixes = {normalize_name(k): v for k, v in purchase.fixes.items()}
+        pick = {normalize_name(k): Customer.objects.get(name=v) for k, v in purchase.pick.items()}
+        result = []
+        for row in rows:
+            name = row.invoice_name or row.pl_name
+            key = normalize_name(name)
+            for attr in ("invoice_name", "pl_name"):
+                if normalize_name(getattr(row, attr)) in fixes:
+                    key = normalize_name(fixes[normalize_name(getattr(row, attr))])
+                    setattr(row, attr, "")  # опечатку не запоминаем как синоним
+                    row.pl_mark = "" if attr == "pl_name" else row.pl_mark
+                    row.product_id = None
+            owner = pick.get(key, customer)
+            product = Product.objects.filter(pk=row.product_id).first()
+            if product is None or (owner and product.customer_id != owner.pk):
+                product = Product.objects.filter(code_key=key, customer=owner).first() if owner else None
+            if product is None and owner is None and existing is not None:
+                product = Product.objects.filter(code_key=key, receipt_lines__batch=existing).first()
+            if product is None:
+                if owner is None:
+                    raise ValueError(f"«{name}»: не знаю заказчика")
+                product = self.new_product(key, owner)
+            row.product_id = product.pk
+            result.append(row)
+        if purchase.only_invoice_items:
+            in_invoice = {r.product_id for r in result if r.qty_invoice is not None}
+            result = [r for r in result if r.product_id in in_invoice]
+        return result
+
+    def new_product(self, key, customer):
+        product = Product(code=f"BSI {key}", customer=customer, status=Product.Status.DRAWING_PENDING,
+                          notes="Создано по документам завода (папка «Закупки»), чертежа в сервисе нет.")
+        if parsed := parse_parametric(key):
+            for attr in ("kind", "angle", "d1", "d2", "l1", "l2", "color"):
+                setattr(product, attr, getattr(parsed, attr))
+        product.save()
+        self.stdout.write(f"  + новое изделие {product.code} ({customer})")
+        return product
+
+    def create(self, purchase, rows):
+        header = {"invoice": purchase.invoice, "notes": "\n".join(
+            n for n in (purchase.notes, "Загружено из папки «Закупки»: " + ", ".join(Path(f).name for f in purchase.files)) if n)}
+        draft = {"rows": [asdict(r) for r in rows]}
+        if not purchase.lines:
+            raise ValueError("в инвойсе нет кодов изделий — новую партию по нему не создать")
+        batch = receipt_import.create_batch(draft, {}, header)
+        if purchase.received:
+            batch.status = Batch.Status.RECEIVED
+            batch.received_date = dt.date.fromisoformat(purchase.received)
+            batch.save()
+            batch.lines.update(qty_received=F("qty_expected"))
+        lines = list(batch.lines.all())
+        state = f"принята {batch.received_date:%d.%m.%Y}" if batch.is_received else "в пути"
+        amount = sum((line.qty_expected * line.price_cny for line in lines if line.price_cny), Decimal(0))
+        self.stdout.write(f"  новая партия, {state}: {len(lines)} поз., {sum(line.qty_expected for line in lines)} шт, "
+                          f"{amount:.2f} CNY")
+
+    def enrich(self, purchase, batch, rows):
+        changes = []
+        if not batch.invoice:
+            batch.invoice = purchase.invoice
+            changes.append("номер инвойса")
+        if purchase.notes and purchase.notes not in batch.notes:
+            batch.notes = "\n".join(n for n in (batch.notes, purchase.notes) if n)
+        batch.save()
+        if purchase.lines:
+            have = {line.product_id: line for line in batch.lines.all()}
+            products = Product.objects.in_bulk([r.product_id for r in rows])
+            for product_id, m in receipt_import.merge_rows(rows, {}).items():
+                product, qty = products[product_id], m["inv"] if m["inv"] is not None else m["pl"]
+                price = Decimal(m["price"]) if m["price"] else None
+                line = have.get(product_id)
+                if line is None:
+                    ReceiptLine.objects.create(batch=batch, product=product, qty_expected=qty, price_cny=price,
+                                               qty_received=qty if batch.is_received else None)
+                    changes.append(f"+ {product.code} ({product.customer}) {qty} шт")
+                else:
+                    if line.qty_expected != qty:
+                        self.stdout.write(f"  · {product.code}: в партии {line.qty_expected} шт, в документах {qty} шт — не меняю")
+                    if price and line.price_cny != price and (line.price_cny is None or abs(line.price_cny - price) < Decimal("0.01")):
+                        line.price_cny = price  # в Excel цена была округлена до копеек
+                        line.save(update_fields=["price_cny"])
+                        changes.append(f"точная цена {product.code}")
+                before = batch.cartons.filter(product=product).count()
+                receipt_import.save_cartons(batch, product, m["cartons"], replace=False)
+                if batch.cartons.filter(product=product).count() > before:
+                    changes.append(f"коробки {product.code}")
+                for name, source in m["names"]:
+                    receipt_import.remember_alias(product, name, source, None)
+        self.stdout.write(f"  дополнена партия {batch}: " + ("; ".join(changes) if changes else "без изменений"))

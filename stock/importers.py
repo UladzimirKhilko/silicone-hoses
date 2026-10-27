@@ -57,13 +57,16 @@ def _pdf_rows(data):
     doc = pymupdf.open(stream=data, filetype="pdf")
     rows, text = [], ""
     for page in doc:
-        text += page.get_text()
+        page_text = page.get_text()
+        if not text:  # шапка первой страницы (номер, дата) часто напечатана вне таблицы
+            rows.extend([line] for line in page_text.splitlines()[:40] if line.strip())
+        text += page_text
         for table in page.find_tables().tables:
             rows.extend(table.extract())
     if not text.strip():
         raise ParseError("PDF — это скан (картинка без текста), прочитать его нельзя. "
                          "Попросите у завода Excel или PDF, сохранённый из Excel.")
-    if not rows:
+    if not any(len(r) > 2 for r in rows):
         raise ParseError("В PDF не нашлось таблицы. Нужен инвойс или упаковочный лист с таблицей позиций.")
     return rows
 
@@ -97,7 +100,7 @@ def _key(text):
     return re.sub(r"\s+", "", str(text).lower())
 
 
-def _find_header(rows, must, limit=40, without=()):
+def _find_header(rows, must, limit=120, without=()):
     """Строка заголовков: в ней есть хотя бы одно слово из каждой группы `must` и нет слов `without`.
     Пробелы и переносы строк в заголовках не важны («QTY/\nCTN» = «qty/ctn»)."""
     for i, row in enumerate(rows[:limit]):
@@ -124,6 +127,7 @@ class InvoiceLine:
     price: Decimal | None
     amount: Decimal | None
     hs_code: str = ""
+    unit: str = ""  # «м/п» — количество в метрах (рукава БелАЗ), обычно пусто = штуки
 
 
 @dataclass
@@ -139,15 +143,30 @@ class Invoice:
         return sum((line.amount or 0) for line in self.lines)
 
 
+RU_MONTHS = {"янв": 1, "фев": 2, "мар": 3, "апр": 4, "май": 5, "мая": 5, "июн": 6, "июл": 7, "авг": 8, "сен": 9,
+             "окт": 10, "ноя": 11, "дек": 12}
+
+
 def _parse_date(text):
-    for fmt in ("%Y/%m/%d", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+    text = text.strip()
+    for fmt in ("%Y/%m/%d", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S"):
         try:
             return dt.datetime.strptime(text, fmt).date()
         except ValueError:
             pass
+    # «июнь.19.2026», «сент.28.2026» — так дату пишет завод в русских документах
+    if m := re.match(r"([а-яё]+)\.?\s*(\d{1,2})[.,\s]+(\d{4})", text.lower()):
+        month = RU_MONTHS.get(m.group(1)[:3])
+        if month:
+            try:
+                return dt.date(int(m.group(3)), month, int(m.group(2)))
+            except ValueError:
+                return None
     return None
 
 
+# Колонка модели в китайском упаковочном листе: «matched models» или «Item No.» (другая версия шаблона)
+MODEL_WORDS = ("model", "itemno", "item no")
 NAME_WORDS = ("наименование", "description", "commodity", "goods", "品名", "名称")
 QTY_WORDS = ("к-во", "к-в", "кол-во", "количество", "quantity", "qty", "数量")
 PRICE_WORDS = ("цена", "unitprice", "price", "单价")
@@ -163,9 +182,11 @@ def parse_invoice(rows):
     c_price = _col(cells, *PRICE_WORDS)
     c_amount = _col(cells, *AMOUNT_WORDS)
     c_hs = _col(cells, "тнвэд", "тн вэд", "hscode", "hs")
+    c_unit = _col(cells, "ед.изм", "едизм", "unit", exclude=("price", "цена"))
     inv = Invoice()
     header_text = " ".join(_text(c) for row in rows[:head] for c in row)
-    if m := re.search(r"(?:Инвойс|Invoice)\s*(?:№|No\.?|Nr\.?|#)?\s*[.:]?\s*([A-Za-z]{1,4}\d{5,}[A-Za-z0-9\-/]*)", header_text, re.IGNORECASE):
+    if m := re.search(r"(?:Инвойс|Invoice)\s*(?:№|No\.?|Nr\.?|#)?\s*[.:]?\s*([A-Za-z]{1,4}(?:-[A-Za-z]{1,4})*-?\d{5,}[A-Za-z0-9\-/]*)",
+                      header_text, re.IGNORECASE):  # TS2407202, JH-J-20261009
         inv.number = m.group(1)
     elif m := re.search(r"\b([A-Z]{2}\d{6,})\b", header_text):
         inv.number = m.group(1)
@@ -191,6 +212,7 @@ def parse_invoice(rows):
             price=_num(row[c_price]) if c_price is not None else None,
             amount=_num(row[c_amount]) if c_amount is not None else None,
             hs_code=_text(row[c_hs]) if c_hs is not None else "",
+            unit=_text(row[c_unit]) if c_unit is not None and c_unit < len(row) else "",
         ))
     if not inv.lines:
         raise ParseError("В инвойсе не нашлось строк с изделиями.")
@@ -228,16 +250,19 @@ class PackingList:
     total_net: Decimal | None = None
     mixed_cartons: list = field(default_factory=list)  # [(маркировка, [(name, qty)])]
     source: str = "cn"  # cn — китайский лист (раскладка по коробкам), ru — русский (итоги по изделию)
+    date: dt.date | None = None  # дата документа (есть в русском листе)
 
 
 def parse_packing_list(rows):
-    head, cells = _find_header(rows, ["model", "qty/ctn"])
+    head, cells = _find_header(rows, [MODEL_WORDS, "qty/ctn"])
     if head is None:
         if _find_header(rows, [NAME_WORDS, ("упаковка", "g.w", "брутто")], without=PRICE_WORDS)[0] is not None:
             return parse_packing_list_ru(rows)
         raise ParseError("Не нашёл заголовков упаковочного листа завода (matched models, QTY/CTN).")
-    c_mark = _col(cells, "item on the carton", "item")
-    c_model = _col(cells, "model")
+    c_model = _col(cells, *MODEL_WORDS)
+    c_mark = _col(cells, "item on the carton", "mark", "唛头")  # маркировка коробки (в листах с «Item No.» её нет)
+    if c_mark == c_model:
+        c_mark = None
     c_color = _col(cells, "color")
     c_qty = _col(cells, "qty/ctn")
     c_ctn = _col(cells, "cartons", exclude=("size", "no."))
@@ -340,6 +365,9 @@ def parse_packing_list_ru(rows):
     pl = PackingList(title=" ".join(_text(c) for c in rows[head - 1] if _text(c)) if head else "", source="ru")
     if m := re.search(r"\b([A-Z]{2}\d{6,})\b", header_text):
         pl.invoice = m.group(1)
+    if m := re.search(r"Дата:?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4}|\d{4}/\d{1,2}/\d{1,2}|[а-яё]+\.?\s*\d{1,2}[.,\s]+\d{4})",
+                      header_text, re.IGNORECASE):
+        pl.date = _parse_date(m.group(1))
     group, last_name = None, ""
     for row in rows[head + 1:]:
         name = _text(get(row, c_name))
@@ -386,7 +414,7 @@ def parse_packing_list_ru(rows):
 
 def parse_document(rows):
     """Что за документ: ("invoice", Invoice) или ("packing", PackingList). Имя файла не важно."""
-    if _find_header(rows, ["model", "qty/ctn"])[0] is not None:
+    if _find_header(rows, [MODEL_WORDS, "qty/ctn"])[0] is not None:
         return "packing", parse_packing_list(rows)
     if _find_header(rows, [NAME_WORDS, QTY_WORDS, PRICE_WORDS], without=("qty/ctn",))[0] is not None:
         return "invoice", parse_invoice(rows)
