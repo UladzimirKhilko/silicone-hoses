@@ -11,7 +11,8 @@
 - остальные создаёт: принятые — с датой приёмки, заказы в пути и на производстве — «в пути»;
 - изделия, которых нет в каталоге, создаёт со статусом «чертёж ожидается».
 
-Повторный запуск ничего не дублирует: партия с таким инвойсом уже есть — пропускается.
+Повторный запуск ничего не дублирует: партия с таким инвойсом уже есть — только доводится до описания
+ниже (заказчик созданных изделий, номер партии, отгрузка), строки не добавляются.
 Ошибки в документах завода исправлены явно (FIXES) и записаны в примечание партии.
 """
 
@@ -27,9 +28,9 @@ from django.db.models import F
 
 from catalog.codes import normalize_name, parse_parametric
 from catalog.models import Customer, Product
-from stock import receipt_import
+from stock import receipt_import, services
 from stock.importers import ParseError, parse_document, read_rows
-from stock.models import Batch, ReceiptLine
+from stock.models import Batch, ReceiptLine, Shipment
 
 
 @dataclass
@@ -43,10 +44,13 @@ class Purchase:
     only_invoice_items: bool = False  # упаковочный лист общий на две поставки
     pick: dict = field(default_factory=dict)  # код → заказчик для кодов, которые есть у нескольких
     fixes: dict = field(default_factory=dict)  # опечатка в документе → правильный код
+    batch_info: dict = field(default_factory=dict)  # номер партии, дата изготовления, паспорт
+    shipped: tuple | None = None  # (дата, примечание) — вся поставка отгружена заказчику
     notes: str = ""
 
 
 MTZ = "МТЗ"
+NEW_PRODUCT_NOTE = "Создано по документам завода (папка «Закупки»), чертежа в сервисе нет."
 PURCHASES = [
     Purchase("TS231230", MTZ, ("МТЗ/Опытные образцы/русс инвойс с доставкой.xlsx",
                                "МТЗ/Опытные образцы/RUSупаковочный лист с печатью.xlsx"),
@@ -62,10 +66,11 @@ PURCHASES = [
                                "МТЗ/август25/Packing List-23ggbykv-TS250869.xls"), existing="2025-11-04"),
     Purchase("TS250963", MTZ, ("МТЗ/сентябрь 25/TS250963_RUS_invoice.pdf",
                                "МТЗ/сентябрь 25/Updated Packing List-23ggbykv-TS250963.xls"), existing="2025-11-19"),
-    Purchase("TS2503154", MTZ, ("МТЗ/Опытная партия -воздух + МАЗ-МАН/TS2503154русс инвойс_опытн.pdf",
-                                "МТЗ/Опытная партия -воздух + МАЗ-МАН/Packing List-23ggbykv-TS2503148 (2).xls"),
-             received="2025-09-18",
-             notes="Опытная партия «воздух + МАЗ-МАН» по договору 09/185 (МТЗ). В инвойсе опечатка в номере — TS2403154, "
+    Purchase("TS2503154", "МАЗ МАН", ("МТЗ/Опытная партия -воздух + МАЗ-МАН/TS2503154русс инвойс_опытн.pdf",
+                                      "МТЗ/Опытная партия -воздух + МАЗ-МАН/Packing List-23ggbykv-TS2503148 (2).xls"),
+             received="2025-09-18", batch_info={"number": "02/25", "manufactured": "06.2025", "passport_number": "09/002/25"},
+             shipped=("2025-09-19", "Паспорт № 09/002/25 от 19.09.2025, получатель СП ЗАО «МАЗ-МАН». Номер ТТН в паспорте не указан."),
+             notes="Опытная партия для МАЗ-МАН (инвойс по договору 09/185 вместе с МТЗ). В инвойсе опечатка в номере — TS2403154, "
                    "китайский упаковочный лист — под номером TS2503148. Пришла вместе с TS2506227 "
                    "(общий русский упаковочный лист от 30.07.2025)."),
     Purchase("TS2601093", MTZ, ("МТЗ/Опытные образцы март 26/Invoice_TS2601093.pdf",
@@ -149,8 +154,8 @@ class Command(BaseCommand):
         packing = next((d for kind, d in docs if kind == "packing"), None)
         customer = Customer.objects.get(name=purchase.customer) if purchase.customer else None
         existing = self.existing(purchase)
-        if existing is None and Batch.objects.filter(invoice=purchase.invoice).exists():
-            self.stdout.write("  уже есть — пропускаю")
+        if existing is None and (done := Batch.objects.filter(invoice=purchase.invoice).first()):
+            self.update_loaded(purchase, done, customer)
             return
         if purchase.existing and existing is None:
             raise ValueError(f"не нашёл партию от {purchase.existing} — сначала перенесите Excel МТЗ")
@@ -218,8 +223,7 @@ class Command(BaseCommand):
         return result
 
     def new_product(self, key, customer):
-        product = Product(code=f"BSI {key}", customer=customer, status=Product.Status.DRAWING_PENDING,
-                          notes="Создано по документам завода (папка «Закупки»), чертежа в сервисе нет.")
+        product = Product(code=f"BSI {key}", customer=customer, status=Product.Status.DRAWING_PENDING, notes=NEW_PRODUCT_NOTE)
         if parsed := parse_parametric(key):
             for attr in ("kind", "angle", "d1", "d2", "l1", "l2", "color"):
                 setattr(product, attr, getattr(parsed, attr))
@@ -228,7 +232,7 @@ class Command(BaseCommand):
         return product
 
     def create(self, purchase, rows):
-        header = {"invoice": purchase.invoice, "notes": "\n".join(
+        header = {"invoice": purchase.invoice, **purchase.batch_info, "notes": "\n".join(
             n for n in (purchase.notes, "Загружено из папки «Закупки»: " + ", ".join(Path(f).name for f in purchase.files)) if n)}
         draft = {"rows": [asdict(r) for r in rows]}
         if not purchase.lines:
@@ -244,6 +248,37 @@ class Command(BaseCommand):
         amount = sum((line.qty_expected * line.price_cny for line in lines if line.price_cny), Decimal(0))
         self.stdout.write(f"  новая партия, {state}: {len(lines)} поз., {sum(line.qty_expected for line in lines)} шт, "
                           f"{amount:.2f} CNY")
+        if purchase.shipped:
+            self.ship(purchase, batch, Customer.objects.get(name=purchase.customer))
+
+    def ship(self, purchase, batch, customer):
+        date, notes = purchase.shipped
+        shipment = Shipment.objects.create(customer=customer, date=dt.date.fromisoformat(date), notes=notes)
+        services.post_shipment(shipment, [{"product": line.product, "qty": line.qty, "batch": batch}
+                                          for line in batch.lines.select_related("product")])
+        self.stdout.write(f"  отгружена {customer} {shipment.date:%d.%m.%Y}")
+
+    def update_loaded(self, purchase, batch, customer):
+        """Поставка уже загружена прежней версией команды — доводим до текущего описания."""
+        changes = []
+        if customer:  # изделия, созданные командой под другим заказчиком, — к правильному
+            for product in Product.objects.filter(receipt_lines__batch=batch, status=Product.Status.DRAWING_PENDING,
+                                                  notes=NEW_PRODUCT_NOTE).exclude(customer=customer):
+                if not product.receipt_lines.exclude(batch=batch).exists():
+                    product.customer = customer
+                    product.save()
+                    changes.append(f"{product.code} → {customer}")
+        for attr, value in purchase.batch_info.items():
+            if not getattr(batch, attr):
+                setattr(batch, attr, value)
+                changes.append(batch._meta.get_field(attr).verbose_name.lower())
+        if purchase.notes and purchase.notes not in batch.notes:
+            batch.notes = "\n".join(n for n in (purchase.notes, batch.notes) if n)
+        batch.save()
+        if purchase.shipped and not batch.shipment_lines.exists():
+            self.ship(purchase, batch, customer)
+            changes.append("отгрузка")
+        self.stdout.write("  уже есть" + (": " + "; ".join(changes) if changes else " — пропускаю"))
 
     def enrich(self, purchase, batch, rows):
         changes = []

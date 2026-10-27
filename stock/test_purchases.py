@@ -106,3 +106,24 @@ def test_import_purchases(tmp_path, belaz, monkeypatch):
 
     call_command("import_purchases", str(tmp_path), "--apply")  # повторно — без дублей
     assert Batch.objects.count() == 3 and ReceiptLine.objects.count() == 4
+
+
+def test_shipped_purchase_and_fixing_earlier_load(db, tmp_path, monkeypatch):
+    mtz, maz = Customer.objects.create(name="МТЗ"), Customer.objects.create(name="МАЗ МАН")
+    _save(tmp_path / "Закупки/МТЗ/инвойс.xlsx", _invoice("TS2503154", [("D100L80-2", 60, 16.4)]))
+    first = cmd.Purchase("TS2503154", "МТЗ", ("МТЗ/инвойс.xlsx",), received="2025-09-18")
+    monkeypatch.setattr(cmd, "PURCHASES", [first])
+    call_command("import_purchases", str(tmp_path), "--apply")  # как загрузила версия 6.6: изделие у МТЗ
+    assert Product.objects.get(code="BSI D100L80-2").customer == mtz
+
+    fixed = cmd.Purchase("TS2503154", "МАЗ МАН", ("МТЗ/инвойс.xlsx",), received="2025-09-18",
+                         batch_info={"number": "02/25", "passport_number": "09/002/25"},
+                         shipped=("2025-09-19", "Паспорт № 09/002/25"))
+    monkeypatch.setattr(cmd, "PURCHASES", [fixed])
+    for _ in range(2):  # второй запуск ничего не меняет
+        call_command("import_purchases", str(tmp_path), "--apply")
+    batch = Batch.objects.get()
+    assert Product.objects.get(code="BSI D100L80-2").customer == maz
+    assert (batch.number, batch.passport_number) == ("02/25", "09/002/25")
+    line = batch.shipment_lines.get()
+    assert (line.shipment.customer, line.shipment.date, line.qty) == (maz, dt.date(2025, 9, 19), 60)
