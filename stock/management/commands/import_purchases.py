@@ -30,7 +30,7 @@ from catalog.codes import normalize_name, parse_parametric
 from catalog.models import Customer, Product
 from stock import receipt_import, services
 from stock.importers import ParseError, parse_document, read_rows
-from stock.models import Batch, ReceiptLine, Shipment
+from stock.models import Adjustment, Batch, ReceiptLine, Shipment
 
 
 @dataclass
@@ -104,6 +104,29 @@ PURCHASES = [
 ]
 
 
+@dataclass
+class Samples:
+    """Бесплатные образцы заказчику по письму (списание «бесплатные образцы заказчику»)."""
+    customer: str
+    date: str
+    document: str
+    qty: int  # штук каждого наименования
+    codes: tuple  # коды как в каталоге (в письмах встречается «90-60» вместо «90/60» и т. п.)
+
+
+SAMPLES = [
+    Samples("ММЗ", "2025-03-12", "Письмо № 09/381 от 12.03.2025, ТТН № 2229415 от 12.03.2025", 3, (
+        "BSI 90/60", "BSI 141-50/63,5", "BSI 63,5", "BSI 90-63,5", "BSI 90-63,5-01", "BSI 90-63,5-02", "BSI 110-50/63,5",
+        "BSI 90-38", "BSI 90-38-01", "BSI 90-38-02", "BSI 90-38-03", "BSI 90-38-04", "BSI 80-38")),
+    Samples("Гомсельмаш", "2025-04-04", "Письмо № 09/510 от 04.04.2025, ТТН № 2229545 от 04.04.2025", 2, (
+        "BSI D32L70-3", "BSI D32L190-3", "BSI D32L200-3", "BSI D90L130-3", "BSI D42L120-2", "BSI D60L120-2", "BSI D65L150-2",
+        "BSI D80L150-2", "BSI 90-D38L100/50-2", "BSI 90-D55L100/100-2", "BSI 90-D60L100/100-2", "BSI 90-D60L150/150-2",
+        "BSI 90-D75L150/150-3", "BSI 90-D85L100/100-3", "BSI 90-D75/50L100/100-3", "BSI 45-D75L196/81-3",
+        "BSI 45-D100L205/85-3", "BSI D76L160-COR-3", "BSI D89L160-COR-3", "BSI D100L160-COR-3", "BSI D100L210-COR-3",
+        "BSI D114L200-COR-3")),
+]
+
+
 def _path_key(text):
     """Имена с Яндекс.Диска: буква «й» бывает разложена (NFD), Windows обрезает пробелы в конце папок."""
     parts = unicodedata.normalize("NFC", str(text)).replace("\\", "/").split("/")
@@ -138,6 +161,14 @@ class Command(BaseCommand):
                             self.load(purchase)
                     except (ValueError, ParseError, OSError) as e:
                         self.errors.append(f"{purchase.invoice}: {e}")
+                        self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
+                for samples in SAMPLES:
+                    self.stdout.write(f"\nОбразцы {samples.customer}")
+                    try:
+                        with transaction.atomic():
+                            self.give_samples(samples)
+                    except (ValueError, services.InsufficientStock) as e:
+                        self.errors.append(f"образцы {samples.customer}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
                 if not apply:
                     raise Rollback
@@ -259,6 +290,23 @@ class Command(BaseCommand):
         services.post_shipment(shipment, [{"product": line.product, "qty": line.qty, "batch": batch}
                                           for line in batch.lines.select_related("product")])
         self.stdout.write(f"  отгружена {customer} {shipment.date:%d.%m.%Y}")
+
+    def give_samples(self, samples):
+        customer = Customer.objects.get(name=samples.customer)
+        kind = Adjustment.Kind.FREE_SAMPLE
+        if Adjustment.objects.filter(kind=kind, customer=customer, notes__startswith=samples.document).exists():
+            self.stdout.write("  уже есть — пропускаю")
+            return
+        lines = []
+        for code in samples.codes:
+            product = Product.objects.filter(code=code, customer=customer).first()
+            if product is None:
+                raise ValueError(f"нет изделия {code}")
+            lines.append({"product": product, "qty": samples.qty})
+        adjustment = Adjustment.objects.create(kind=kind, date=dt.date.fromisoformat(samples.date), customer=customer,
+                                               notes=f"{samples.document}. Опытные образцы на безвозмездной основе.")
+        services.post_adjustment(adjustment, lines)
+        self.stdout.write(f"  списано {len(lines)} наим. по {samples.qty} шт ({adjustment.date:%d.%m.%Y})")
 
     def update_loaded(self, purchase, batch, customer):
         """Поставка уже загружена прежней версией команды — доводим до текущего описания."""

@@ -44,6 +44,11 @@ def _save(path, rows):
     wb.save(path)
 
 
+@pytest.fixture(autouse=True)
+def no_real_samples(monkeypatch):
+    monkeypatch.setattr(cmd, "SAMPLES", [])
+
+
 @pytest.fixture
 def belaz(db):
     return Customer.objects.create(name="БелАЗ")
@@ -127,3 +132,18 @@ def test_shipped_purchase_and_fixing_earlier_load(db, tmp_path, monkeypatch):
     assert (batch.number, batch.passport_number) == ("02/25", "09/002/25")
     line = batch.shipment_lines.get()
     assert (line.shipment.customer, line.shipment.date, line.qty) == (maz, dt.date(2025, 9, 19), 60)
+
+
+def test_free_samples_by_letter(db, tmp_path, monkeypatch):
+    mmz = Customer.objects.create(name="ММЗ")
+    product = Product.objects.create(code="BSI 90/60", customer=mmz)
+    batch = Batch.objects.create(status=Batch.Status.RECEIVED, received_date=dt.date(2025, 2, 8))
+    ReceiptLine.objects.create(batch=batch, product=product, qty_expected=5, qty_received=5)
+    (tmp_path / "Закупки").mkdir()
+    monkeypatch.setattr(cmd, "PURCHASES", [])
+    monkeypatch.setattr(cmd, "SAMPLES", [cmd.Samples("ММЗ", "2025-03-12", "Письмо № 09/381", 3, ("BSI 90/60",))])
+    for _ in range(2):
+        call_command("import_purchases", str(tmp_path), "--apply")
+    from . import services
+
+    assert services.on_hand([product.pk])[product.pk] == 2
