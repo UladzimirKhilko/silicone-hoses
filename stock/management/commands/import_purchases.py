@@ -163,10 +163,19 @@ SALES = [
              ("BSI D50L100-3", 2, None, "02/25"), ("BSI D60L80-3", 1, None, "02/25"), ("BSI D90L120-3", 1, None, "01/25"))),
     Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 21", products_of=MTZ,
          notes=STAVROPOL_NOTES, lines=(("BSI D50L100-3", 10, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"))),
-    Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026 (номер спецификации не указан — по составу № 29 "
-         "от 05.03.2026: D60L80-3 и D60L80-2 по 10 шт по 191,27 и 179,47 руб. РФ)", products_of=MTZ,
+    # спецификации № 28, 29, 30 от 05.03.2026; по № 28 в паспорте D63L80-2 — 20 шт, в спецификации — 10
+    Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 28", products_of=MTZ,
+         notes=STAVROPOL_NOTES + " По спецификации D63L80-2 — 10 шт, по паспорту — 20 шт.", lines=(
+             ("BSI D50L100-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"), ("BSI D63L80-2", 20, None, "02/25"),
+             ("BSI D75L100-3", 5, None, "02/25"), ("BSI D75L100-2", 5, None, "02/25"), ("BSI D90L120-3", 10, None, "02/25"),
+             ("BSI D90L120-2", 10, None, "02/25"))),
+    Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 29", products_of=MTZ,
          notes=STAVROPOL_NOTES, lines=(("BSI D60L80-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"))),
+    Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 30", products_of=MTZ,
+         notes=STAVROPOL_NOTES, lines=(("BSI D60L80-3", 1, None, "02/25"), ("BSI D60L80-2", 1, None, "02/25"))),
 ]
+# Отгрузки, внесённые прежней версией по ошибке: файл паспорта «18» перезаписан паспортом спецификации № 29
+OBSOLETE_SALES = [(STAVROPOL, "Паспорт № 09/002/25 от 25.03.2026 (номер спецификации не указан")]
 
 
 def _path_key(text):
@@ -212,6 +221,10 @@ class Command(BaseCommand):
                     except (ValueError, services.InsufficientStock) as e:
                         self.errors.append(f"образцы {samples.customer}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
+                for customer_name, prefix in OBSOLETE_SALES:
+                    for shipment in Shipment.objects.filter(customer__name=customer_name, notes__startswith=prefix):
+                        self.stdout.write(f"\nУдалена ошибочная отгрузка: {shipment}")
+                        shipment.delete()
                 for sale in SALES:
                     self.stdout.write(f"\nОтгрузка {sale.customer}: {sale.document}")
                     try:
