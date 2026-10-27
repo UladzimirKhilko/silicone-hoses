@@ -126,9 +126,17 @@ SAMPLES = [
         "BSI 45-D100L205/85-3", "BSI D76L160-COR-3", "BSI D89L160-COR-3", "BSI D100L160-COR-3", "BSI D100L210-COR-3",
         "BSI D114L200-COR-3")),
     # документов нет — переданы как образцы; дата условная (приход TS2407202)
+    Samples("МТЗ", "2026-08-14", "Соглашение № 59 от 12.08.2026 о передаче образцов для испытаний, ТТН ЕМ № 3077456 "
+            "от 14.08.2026", 4, ("BSI D25L140/67-1-M",)),
     Samples("БелАЗ", "2025-02-08", "Без документов: переданы БелАЗу как образцы (дата условная)", 1, (
         "BSI D60L1000-2", "BSI D89L1000-2", "BSI D102L1000-2")),
 ]
+
+
+# Сведения об изделиях, созданных по документам завода, из документов заказчика (пустые поля заполняются)
+PRODUCT_INFO = {
+    (MTZ, "BSI D25L140/67-1-M"): {"yapib": "26.1564"},  # соглашение № 59 от 12.08.2026
+}
 
 
 @dataclass
@@ -213,6 +221,7 @@ class Command(BaseCommand):
                     except (ValueError, ParseError, OSError) as e:
                         self.errors.append(f"{purchase.invoice}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
+                self.product_info()
                 for samples in SAMPLES:
                     self.stdout.write(f"\nОбразцы {samples.customer}")
                     try:
@@ -388,6 +397,19 @@ class Command(BaseCommand):
         amount = sum(r["qty"] * r["price_byn"] for r in rows if r["price_byn"])
         self.stdout.write(f"  отгружено {sum(r['qty'] for r in rows)} шт" + (f" на {amount} руб. без НДС" if amount else "")
                           + f" ({shipment.date:%d.%m.%Y})")
+
+    def product_info(self):
+        for (customer, code), info in PRODUCT_INFO.items():
+            product = Product.objects.filter(customer__name=customer, code=code).first()
+            if product is None:
+                continue
+            changed = {k: v for k, v in info.items() if not getattr(product, k)
+                       and not (k == "yapib" and Product.objects.filter(yapib=v).exists())}
+            if changed:
+                for k, v in changed.items():
+                    setattr(product, k, v)
+                product.save()
+                self.stdout.write(f"\n{product.code}: " + ", ".join(f"{k} = {v}" for k, v in changed.items()))
 
     def give_samples(self, samples):
         customer = Customer.objects.get(name=samples.customer)
