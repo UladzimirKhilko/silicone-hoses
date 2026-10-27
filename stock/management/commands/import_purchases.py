@@ -85,7 +85,9 @@ PURCHASES = [
              notes="В дороге (упаковочный лист от 28.09.2026)."),
     Purchase("TS260294", "Амкадор", ("Амкадор -Пинск/этап 1/Proforma_Invoice_TS260294_рус_1этап.xlsx",
                                      "Амкадор -Пинск/этап 1/Packing List-23ggbykv-TS260294.xls"), received="2026-04-21",
-             notes="Амкадор (Пинск), этап 1. Дата приёмки — дата упаковочного листа (21.04.2026), фактическую уточните."),
+             pick={"D70L100-2": MTZ},
+             notes="Амкадор (Пинск), этап 1: 599 шт Амкадору; D70L100-2 (100 шт) в учёте Амкадора нет — это изделие МТЗ. "
+                   "Дата приёмки — дата упаковочного листа (21.04.2026), фактическую уточните."),
     Purchase("TS2605143", "Амкадор", ("Амкадор -Пинск/2 этап/Order No.8-Proforma_Invoice_рус_2этап.pdf",
                                       "Амкадор -Пинск/2 этап/Packing List-23ggbykv-TS2605143 (3).xls"), received="2026-06-19",
              notes="Амкадор (Пинск), этап 2. Дата приёмки — дата упаковочного листа (19.06.2026), фактическую уточните."),
@@ -261,13 +263,24 @@ class Command(BaseCommand):
     def update_loaded(self, purchase, batch, customer):
         """Поставка уже загружена прежней версией команды — доводим до текущего описания."""
         changes = []
-        if customer:  # изделия, созданные командой под другим заказчиком, — к правильному
-            for product in Product.objects.filter(receipt_lines__batch=batch, status=Product.Status.DRAWING_PENDING,
-                                                  notes=NEW_PRODUCT_NOTE).exclude(customer=customer):
-                if not product.receipt_lines.exclude(batch=batch).exists():
-                    product.customer = customer
-                    product.save()
-                    changes.append(f"{product.code} → {customer}")
+        pick = {normalize_name(k): Customer.objects.get(name=v) for k, v in purchase.pick.items()}
+        # изделия, созданные командой под другим заказчиком, — к правильному
+        for product in Product.objects.filter(receipt_lines__batch=batch, status=Product.Status.DRAWING_PENDING,
+                                              notes=NEW_PRODUCT_NOTE):
+            owner = pick.get(product.code_key, customer)
+            if owner is None or product.customer_id == owner.pk or product.receipt_lines.exclude(batch=batch).exists():
+                continue
+            twin = Product.objects.filter(code_key=product.code_key, customer=owner).exclude(pk=product.pk).first()
+            if twin and not (product.shipment_lines.exists() or product.spec_lines.exists()):
+                # у заказчика такое изделие уже есть — созданный дубль убираем
+                product.receipt_lines.update(product=twin)
+                product.carton_specs.update(product=twin)
+                product.aliases.all().delete()
+                product.delete()
+            else:
+                product.customer = owner
+                product.save()
+            changes.append(f"{product.code} → {owner}")
         for attr, value in purchase.batch_info.items():
             if not getattr(batch, attr):
                 setattr(batch, attr, value)

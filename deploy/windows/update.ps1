@@ -39,6 +39,11 @@ if (Test-Path "$Root\data\source\Закупки") {
     # уже загруженные поставки пропускаются — повторный запуск безопасен
     & $venvPy manage.py import_purchases "$Root\data\source\Закупки" --apply
     if ($LASTEXITCODE -ne 0) { Write-Host "Часть приходов не загрузилась — пришлите текст выше разработчику." -ForegroundColor Yellow }
+    # таблицы исполнения спецификаций Амкадора (лежат прямо в папке, не в «этап 1/2 этап»)
+    Get-ChildItem -LiteralPath "$Root\data\source\Закупки\Амкадор -Пинск" -Filter *.xlsx -File -ErrorAction SilentlyContinue | ForEach-Object {
+        & $venvPy manage.py import_spec_shipments $_.FullName --customer "Амкадор" --apply
+        if ($LASTEXITCODE -ne 0) { Write-Host "Файл $($_.Name) не загрузился — пришлите текст выше разработчику." -ForegroundColor Yellow }
+    }
 }
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Start-ScheduledTask -TaskName "Patrubki BSI"
