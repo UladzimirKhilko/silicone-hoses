@@ -12,7 +12,7 @@ from catalog.models import Customer, Product, ProductAlias
 from . import receipt_import
 from .importers import parse_document
 from .management.commands import import_purchases as cmd
-from .models import Batch, ReceiptLine
+from .models import Batch, ReceiptLine, Shipment
 
 
 def _invoice(number, lines, unit=False):
@@ -47,6 +47,7 @@ def _save(path, rows):
 @pytest.fixture(autouse=True)
 def no_real_samples(monkeypatch):
     monkeypatch.setattr(cmd, "SAMPLES", [])
+    monkeypatch.setattr(cmd, "SALES", [])
 
 
 @pytest.fixture
@@ -147,3 +148,19 @@ def test_free_samples_by_letter(db, tmp_path, monkeypatch):
     from . import services
 
     assert services.on_hand([product.pk])[product.pk] == 2
+
+
+def test_sale_by_ttn(db, tmp_path, monkeypatch, belaz):
+    product = Product.objects.create(code="BSI D89L1000-2", customer=belaz)
+    old = Batch.objects.create(status=Batch.Status.RECEIVED, received_date=dt.date(2025, 2, 8), invoice="TS2407202")
+    ReceiptLine.objects.create(batch=old, product=product, qty_expected=1, qty_received=1)  # образец — не трогаем
+    batch = Batch.objects.create(status=Batch.Status.RECEIVED, received_date=dt.date(2026, 7, 15), invoice="TS2406188")
+    ReceiptLine.objects.create(batch=batch, product=product, qty_expected=235, qty_received=235)
+    (tmp_path / "Закупки").mkdir()
+    monkeypatch.setattr(cmd, "PURCHASES", [])
+    monkeypatch.setattr(cmd, "SALES", [cmd.Sale("БелАЗ", "2026-09-07", "3077598", ("450-01509", "2026-04-25"), ("10", "2026-07-06"),
+                                                "TS2406188", (("BSI D89L1000-2", 235, "66.00"),))])
+    for _ in range(2):
+        call_command("import_purchases", str(tmp_path), "--apply")
+    line = Shipment.objects.get().lines.get()
+    assert (line.batch, line.qty, line.price_byn, line.spec_line.spec.number) == (batch, 235, Decimal("66.00"), "10")

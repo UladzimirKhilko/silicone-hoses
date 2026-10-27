@@ -127,6 +127,24 @@ SAMPLES = [
 ]
 
 
+@dataclass
+class Sale:
+    """Отгрузка по ТТН с договором и спецификацией (создаются, если их ещё нет)."""
+    customer: str
+    date: str
+    ttn: str
+    contract: tuple  # (номер, дата)
+    spec: tuple  # (номер, дата)
+    batch: str  # инвойс партии, из которой отгружено
+    lines: tuple  # (код, шт, цена без НДС)
+
+
+SALES = [
+    Sale("БелАЗ", "2026-09-07", "3077598", ("450-01509", "2026-04-25"), ("10", "2026-07-06"), "TS2406188", (
+        ("BSI D51L1000-2", 45, "38.00"), ("BSI D89L1000-2", 235, "66.00"), ("BSI D127L1000-2", 21, "90.00"))),
+]
+
+
 def _path_key(text):
     """Имена с Яндекс.Диска: буква «й» бывает разложена (NFD), Windows обрезает пробелы в конце папок."""
     parts = unicodedata.normalize("NFC", str(text)).replace("\\", "/").split("/")
@@ -169,6 +187,14 @@ class Command(BaseCommand):
                             self.give_samples(samples)
                     except (ValueError, services.InsufficientStock) as e:
                         self.errors.append(f"образцы {samples.customer}: {e}")
+                        self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
+                for sale in SALES:
+                    self.stdout.write(f"\nОтгрузка {sale.customer}, ТТН {sale.ttn}")
+                    try:
+                        with transaction.atomic():
+                            self.sell(sale)
+                    except (ValueError, services.InsufficientStock) as e:
+                        self.errors.append(f"ТТН {sale.ttn}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
                 if not apply:
                     raise Rollback
@@ -290,6 +316,33 @@ class Command(BaseCommand):
         services.post_shipment(shipment, [{"product": line.product, "qty": line.qty, "batch": batch}
                                           for line in batch.lines.select_related("product")])
         self.stdout.write(f"  отгружена {customer} {shipment.date:%d.%m.%Y}")
+
+    def sell(self, sale):
+        from sales.models import Contract, SpecLine, Specification
+
+        customer = Customer.objects.get(name=sale.customer)
+        if Shipment.objects.filter(customer=customer, ttn_number=sale.ttn).exists():
+            self.stdout.write("  уже есть — пропускаю")
+            return
+        batch = Batch.objects.filter(invoice=sale.batch).first()
+        if batch is None:
+            raise ValueError(f"нет партии {sale.batch}")
+        contract, _ = Contract.objects.get_or_create(customer=customer, number=sale.contract[0],
+                                                     defaults={"date": dt.date.fromisoformat(sale.contract[1])})
+        spec, _ = Specification.objects.get_or_create(contract=contract, number=sale.spec[0],
+                                                      defaults={"date": dt.date.fromisoformat(sale.spec[1])})
+        shipment = Shipment.objects.create(customer=customer, date=dt.date.fromisoformat(sale.date), ttn_number=sale.ttn,
+                                           notes=f"Договор № {contract.number}, спецификация № {spec.number}")
+        rows = []
+        for code, qty, price in sale.lines:
+            product = Product.objects.filter(code=code, customer=customer).first()
+            if product is None:
+                raise ValueError(f"нет изделия {code}")
+            spec_line, _ = SpecLine.objects.get_or_create(spec=spec, product=product, defaults={"price_byn": Decimal(price)})
+            rows.append({"product": product, "qty": qty, "price_byn": Decimal(price), "batch": batch, "spec_line": spec_line})
+        services.post_shipment(shipment, rows)
+        amount = sum(r["qty"] * r["price_byn"] for r in rows)
+        self.stdout.write(f"  отгружено {sum(r['qty'] for r in rows)} шт на {amount} руб. без НДС ({shipment.date:%d.%m.%Y})")
 
     def give_samples(self, samples):
         customer = Customer.objects.get(name=samples.customer)
