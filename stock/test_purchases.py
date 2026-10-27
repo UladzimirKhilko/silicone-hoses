@@ -158,9 +158,25 @@ def test_sale_by_ttn(db, tmp_path, monkeypatch, belaz):
     ReceiptLine.objects.create(batch=batch, product=product, qty_expected=235, qty_received=235)
     (tmp_path / "Закупки").mkdir()
     monkeypatch.setattr(cmd, "PURCHASES", [])
-    monkeypatch.setattr(cmd, "SALES", [cmd.Sale("БелАЗ", "2026-09-07", "3077598", ("450-01509", "2026-04-25"), ("10", "2026-07-06"),
-                                                "TS2406188", (("BSI D89L1000-2", 235, "66.00"),))])
+    monkeypatch.setattr(cmd, "SALES", [cmd.Sale("БелАЗ", "2026-09-07", "ТТН 3077598", ttn="3077598", contract=("450-01509", "2026-04-25"),
+                                                spec=("10", "2026-07-06"), lines=(("BSI D89L1000-2", 235, "66.00", "TS2406188"),))])
     for _ in range(2):
         call_command("import_purchases", str(tmp_path), "--apply")
     line = Shipment.objects.get().lines.get()
     assert (line.batch, line.qty, line.price_byn, line.spec_line.spec.number) == (batch, 235, Decimal("66.00"), "10")
+
+
+def test_sale_by_passport_to_trading_house(db, tmp_path, monkeypatch):
+    mtz = Customer.objects.create(name="МТЗ")
+    product = Product.objects.create(code="BSI D60L80-2", customer=mtz)
+    batch = Batch.objects.create(status=Batch.Status.RECEIVED, received_date=dt.date(2025, 9, 18), number="02/25")
+    ReceiptLine.objects.create(batch=batch, product=product, qty_expected=50, qty_received=50)
+    (tmp_path / "Закупки").mkdir()
+    monkeypatch.setattr(cmd, "PURCHASES", [])
+    monkeypatch.setattr(cmd, "SALES", [cmd.Sale("ТД МТЗ-Ставрополь", "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025",
+                                                products_of="МТЗ", lines=(("BSI D60L80-2", 10, None, "02/25"),))])
+    for _ in range(2):
+        call_command("import_purchases", str(tmp_path), "--apply")
+    line = Shipment.objects.get().lines.get()
+    assert (line.shipment.customer.name, line.product, line.batch, line.qty, line.price_byn) == (
+        "ТД МТЗ-Ставрополь", product, batch, 10, None)

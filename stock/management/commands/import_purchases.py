@@ -58,6 +58,7 @@ PURCHASES = [
     Purchase("TS2407202", None, ("МТЗ/Опытная партия/Всего_русс инвойс_ноябрь.xlsx",
                                  "МТЗ/Опытная партия/Packing List-23ggbykv-TS2407202 (2).xls"),
              existing="2025-02-08", pick={"90-D60L100/100-2": "Гомсельмаш"},
+             batch_info={"number": "01/25", "manufactured": "11.2024"},
              notes="Добавлены образцы ГСМ, ММЗ, БелАЗ по инвойсу TS2407202."),
     Purchase("TS2506227", MTZ, ("МТЗ/Опытная партия -воздух + МАЗ-МАН/Invoice_TS2506227_русс.pdf",
                                 "МТЗ/Опытная партия -воздух + МАЗ-МАН/TS2503154 & TS2506227_RUSупаковочный лист.xlsx"),
@@ -132,19 +133,39 @@ SAMPLES = [
 
 @dataclass
 class Sale:
-    """Отгрузка по ТТН с договором и спецификацией (создаются, если их ещё нет)."""
+    """Отгрузка заказчику по документу (ТТН или паспорт). Договор и спецификация создаются, если указаны
+    и цены в BYN; цены в другой валюте — только в примечании."""
     customer: str
     date: str
-    ttn: str
-    contract: tuple  # (номер, дата)
-    spec: tuple  # (номер, дата)
-    batch: str  # инвойс партии, из которой отгружено
-    lines: tuple  # (код, шт, цена без НДС)
+    document: str  # по нему отгрузка узнаётся при повторном запуске
+    lines: tuple  # (код, шт, цена без НДС BYN или None, партия — инвойс или номер партии)
+    ttn: str = ""
+    contract: tuple | None = None  # (номер, дата)
+    spec: tuple | None = None  # (номер, дата)
+    products_of: str | None = None  # чьи изделия (торговым домам МТЗ — изделия МТЗ)
+    notes: str = ""
 
 
+STAVROPOL = "ТД МТЗ-Ставрополь"
+STAVROPOL_NOTES = "Договор № 07/203 от 09.12.2024, цены в руб. РФ — в сервис не перенесены."
 SALES = [
-    Sale("БелАЗ", "2026-09-07", "3077598", ("450-01509", "2026-04-25"), ("10", "2026-07-06"), "TS2406188", (
-        ("BSI D51L1000-2", 45, "38.00"), ("BSI D89L1000-2", 235, "66.00"), ("BSI D127L1000-2", 21, "90.00"))),
+    Sale("БелАЗ", "2026-09-07", "ТТН ЕМ № 3077598 от 07.09.2026", ttn="3077598",
+         contract=("450-01509", "2026-04-25"), spec=("10", "2026-07-06"), lines=(
+             ("BSI D51L1000-2", 45, "38.00", "TS2406188"), ("BSI D89L1000-2", 235, "66.00", "TS2406188"),
+             ("BSI D127L1000-2", 21, "90.00", "TS2406188"))),
+    # паспорта отгрузок, номер ТТН в них не заполнен
+    Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 17", products_of=MTZ,
+         notes=STAVROPOL_NOTES, lines=(
+             ("BSI D50L100-3", 10, None, "02/25"), ("BSI D60L80-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"),
+             ("BSI D63L80-2", 20, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"), ("BSI D75L100-2", 10, None, "02/25"))),
+    Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 20", products_of=MTZ,
+         notes=STAVROPOL_NOTES, lines=(
+             ("BSI D50L100-3", 2, None, "02/25"), ("BSI D60L80-3", 1, None, "02/25"), ("BSI D90L120-3", 1, None, "01/25"))),
+    Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 21", products_of=MTZ,
+         notes=STAVROPOL_NOTES, lines=(("BSI D50L100-3", 10, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"))),
+    Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026 (номер спецификации не указан — по составу № 29 "
+         "от 05.03.2026: D60L80-3 и D60L80-2 по 10 шт по 191,27 и 179,47 руб. РФ)", products_of=MTZ,
+         notes=STAVROPOL_NOTES, lines=(("BSI D60L80-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"))),
 ]
 
 
@@ -192,12 +213,12 @@ class Command(BaseCommand):
                         self.errors.append(f"образцы {samples.customer}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
                 for sale in SALES:
-                    self.stdout.write(f"\nОтгрузка {sale.customer}, ТТН {sale.ttn}")
+                    self.stdout.write(f"\nОтгрузка {sale.customer}: {sale.document}")
                     try:
                         with transaction.atomic():
                             self.sell(sale)
                     except (ValueError, services.InsufficientStock) as e:
-                        self.errors.append(f"ТТН {sale.ttn}: {e}")
+                        self.errors.append(f"{sale.customer}, {sale.document}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
                 if not apply:
                     raise Rollback
@@ -323,29 +344,37 @@ class Command(BaseCommand):
     def sell(self, sale):
         from sales.models import Contract, SpecLine, Specification
 
-        customer = Customer.objects.get(name=sale.customer)
-        if Shipment.objects.filter(customer=customer, ttn_number=sale.ttn).exists():
+        customer, _ = Customer.objects.get_or_create(name=sale.customer)
+        done = Shipment.objects.filter(customer=customer)
+        if done.filter(ttn_number=sale.ttn).exists() if sale.ttn else done.filter(notes__startswith=sale.document).exists():
             self.stdout.write("  уже есть — пропускаю")
             return
-        batch = Batch.objects.filter(invoice=sale.batch).first()
-        if batch is None:
-            raise ValueError(f"нет партии {sale.batch}")
-        contract, _ = Contract.objects.get_or_create(customer=customer, number=sale.contract[0],
-                                                     defaults={"date": dt.date.fromisoformat(sale.contract[1])})
-        spec, _ = Specification.objects.get_or_create(contract=contract, number=sale.spec[0],
-                                                      defaults={"date": dt.date.fromisoformat(sale.spec[1])})
-        shipment = Shipment.objects.create(customer=customer, date=dt.date.fromisoformat(sale.date), ttn_number=sale.ttn,
-                                           notes=f"Договор № {contract.number}, спецификация № {spec.number}")
+        spec = None
+        if sale.contract:
+            contract, _ = Contract.objects.get_or_create(customer=customer, number=sale.contract[0],
+                                                         defaults={"date": dt.date.fromisoformat(sale.contract[1])})
+            spec, _ = Specification.objects.get_or_create(contract=contract, number=sale.spec[0],
+                                                          defaults={"date": dt.date.fromisoformat(sale.spec[1])})
+        notes = ". ".join(n for n in (sale.document, f"Договор № {contract.number}, спецификация № {spec.number}" if spec else "",
+                                      sale.notes) if n)
+        shipment = Shipment.objects.create(customer=customer, date=dt.date.fromisoformat(sale.date), ttn_number=sale.ttn, notes=notes)
+        owner = Customer.objects.get(name=sale.products_of) if sale.products_of else customer
         rows = []
-        for code, qty, price in sale.lines:
-            product = Product.objects.filter(code=code, customer=customer).first()
+        for code, qty, price, batch_ref in sale.lines:
+            product = Product.objects.filter(code=code, customer=owner).first()
             if product is None:
                 raise ValueError(f"нет изделия {code}")
-            spec_line, _ = SpecLine.objects.get_or_create(spec=spec, product=product, defaults={"price_byn": Decimal(price)})
-            rows.append({"product": product, "qty": qty, "price_byn": Decimal(price), "batch": batch, "spec_line": spec_line})
+            batch = (Batch.objects.filter(invoice=batch_ref, lines__product=product).first()
+                     or Batch.objects.filter(number=batch_ref, lines__product=product).first())
+            if batch is None:
+                raise ValueError(f"{code}: нет партии {batch_ref}")
+            price = Decimal(price) if price else None
+            spec_line = SpecLine.objects.get_or_create(spec=spec, product=product, defaults={"price_byn": price})[0] if spec else None
+            rows.append({"product": product, "qty": qty, "price_byn": price, "batch": batch, "spec_line": spec_line})
         services.post_shipment(shipment, rows)
-        amount = sum(r["qty"] * r["price_byn"] for r in rows)
-        self.stdout.write(f"  отгружено {sum(r['qty'] for r in rows)} шт на {amount} руб. без НДС ({shipment.date:%d.%m.%Y})")
+        amount = sum(r["qty"] * r["price_byn"] for r in rows if r["price_byn"])
+        self.stdout.write(f"  отгружено {sum(r['qty'] for r in rows)} шт" + (f" на {amount} руб. без НДС" if amount else "")
+                          + f" ({shipment.date:%d.%m.%Y})")
 
     def give_samples(self, samples):
         customer = Customer.objects.get(name=samples.customer)
@@ -402,6 +431,10 @@ class Command(BaseCommand):
         if not batch.invoice:
             batch.invoice = purchase.invoice
             changes.append("номер инвойса")
+        for attr, value in purchase.batch_info.items():
+            if not getattr(batch, attr):
+                setattr(batch, attr, value)
+                changes.append(batch._meta.get_field(attr).verbose_name.lower())
         if purchase.notes and purchase.notes not in batch.notes:
             batch.notes = "\n".join(n for n in (batch.notes, purchase.notes) if n)
         batch.save()
