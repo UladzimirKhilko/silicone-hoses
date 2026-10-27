@@ -29,7 +29,7 @@ from django.db.models import F
 from catalog.codes import normalize_name, parse_parametric
 from catalog.models import Customer, Product
 from stock import receipt_import, services
-from stock.importers import ParseError, parse_document, read_rows
+from stock.importers import Invoice, InvoiceLine, ParseError, parse_document, read_rows
 from stock.models import Adjustment, Batch, ReceiptLine, Shipment
 
 
@@ -46,6 +46,7 @@ class Purchase:
     fixes: dict = field(default_factory=dict)  # опечатка в документе → правильный код
     batch_info: dict = field(default_factory=dict)  # номер партии, дата изготовления, паспорт
     shipped: tuple | None = None  # (дата, примечание) — вся поставка отгружена заказчику
+    items: tuple = ()  # строки инвойса (наименование, шт, цена CNY), если файлов нет на Яндекс.Диске
     notes: str = ""
 
 
@@ -84,6 +85,10 @@ PURCHASES = [
     Purchase("TS2608242", MTZ, ("МТЗ/август 26 в дороге(доставка)/No.11-Proforma Invoice-TS2608242-2026.8.31.pdf",
                                 "МТЗ/август 26 в дороге(доставка)/Packing List-23ggbykv-TS2608242.xls"),
              notes="В дороге (упаковочный лист от 28.09.2026)."),
+    # файлы присланы в переписке 27.10.2026, на Яндекс.Диске их нет
+    Purchase("TS260887", MTZ, (), items=(("Патрубок силиконовый BSI D100L160-COR-3", 6, "39.40"),),
+             notes="Инвойс TS260887 от 12.08.2026 к договору 09/44, упаковочный лист от 24.08.2026 (1 коробка, 3,2 кг). "
+                   "Образцы для МТЗ (ЯПИБ 26.1561)."),
     Purchase("TS260294", "Амкадор", ("Амкадор -Пинск/этап 1/Proforma_Invoice_TS260294_рус_1этап.xlsx",
                                      "Амкадор -Пинск/этап 1/Packing List-23ggbykv-TS260294.xls"), received="2026-04-21",
              pick={"D70L100-2": MTZ},
@@ -136,6 +141,7 @@ SAMPLES = [
 # Сведения об изделиях, созданных по документам завода, из документов заказчика (пустые поля заполняются)
 PRODUCT_INFO = {
     (MTZ, "BSI D25L140/67-1-M"): {"yapib": "26.1564"},  # соглашение № 59 от 12.08.2026
+    (MTZ, "BSI D100L160-COR-3"): {"yapib": "26.1561"},  # чертёж МТЗ; такой же код есть у Гомсельмаша
 }
 
 
@@ -261,6 +267,9 @@ class Command(BaseCommand):
 
     def load(self, purchase):
         docs = [self.parse(name) for name in purchase.files]
+        if purchase.items:
+            docs.append(("invoice", Invoice(number=purchase.invoice, lines=[
+                InvoiceLine(name=name, qty=qty, price=Decimal(price), amount=qty * Decimal(price)) for name, qty, price in purchase.items])))
         invoice = next(d for kind, d in docs if kind == "invoice")
         packing = next((d for kind, d in docs if kind == "packing"), None)
         customer = Customer.objects.get(name=purchase.customer) if purchase.customer else None
