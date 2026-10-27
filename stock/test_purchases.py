@@ -180,3 +180,19 @@ def test_sale_by_passport_to_trading_house(db, tmp_path, monkeypatch):
     line = Shipment.objects.get().lines.get()
     assert (line.shipment.customer.name, line.product, line.batch, line.qty, line.price_byn) == (
         "ТД МТЗ-Ставрополь", product, batch, 10, None)
+
+
+def test_sale_in_roubles_converted_by_rate_and_filled_later(db, tmp_path, monkeypatch):
+    mtz = Customer.objects.create(name="МТЗ")
+    product = Product.objects.create(code="BSI D60L80-2", customer=mtz)
+    batch = Batch.objects.create(status=Batch.Status.RECEIVED, received_date=dt.date(2025, 9, 18), number="02/25")
+    ReceiptLine.objects.create(batch=batch, product=product, qty_expected=50, qty_received=50)
+    (tmp_path / "Закупки").mkdir()
+    monkeypatch.setattr(cmd, "PURCHASES", [])
+    sale = dict(customer="ТД", date="2026-03-25", document="Паспорт от 25.03.2026", products_of="МТЗ")
+    monkeypatch.setattr(cmd, "SALES", [cmd.Sale(**sale, lines=(("BSI D60L80-2", 10, None, "02/25"),))])
+    call_command("import_purchases", str(tmp_path), "--apply")  # сначала без цены
+    monkeypatch.setattr(cmd, "SALES", [cmd.Sale(**sale, rub_rate="3.6507", lines=(("BSI D60L80-2", 10, "179.47", "02/25"),))])
+    call_command("import_purchases", str(tmp_path), "--apply")
+    shipment = Shipment.objects.get()
+    assert shipment.lines.get().price_byn == Decimal("6.55") and "3,6507" in shipment.notes  # 179,47 × 3,6507 / 100

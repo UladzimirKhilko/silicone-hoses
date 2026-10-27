@@ -151,11 +151,14 @@ class Sale:
     contract: tuple | None = None  # (номер, дата)
     spec: tuple | None = None  # (номер, дата)
     products_of: str | None = None  # чьи изделия (торговым домам МТЗ — изделия МТЗ)
+    rub_rate: str | None = None  # цены в строках — руб. РФ; курс НБ РБ, BYN за 100 RUB на дату отгрузки
     notes: str = ""
 
 
 STAVROPOL = "ТД МТЗ-Ставрополь"
 STAVROPOL_NOTES = "Договор № 07/203 от 09.12.2024, цены в руб. РФ — в сервис не перенесены."
+STAVROPOL_RUB = "Договор № 07/203 от 09.12.2024."
+RATE_20260325 = "3.6507"  # НБ РБ, BYN за 100 RUB на 25.03.2026
 SALES = [
     Sale("БелАЗ", "2026-09-07", "ТТН ЕМ № 3077598 от 07.09.2026", ttn="3077598",
          contract=("450-01509", "2026-04-25"), spec=("10", "2026-07-06"), lines=(
@@ -173,14 +176,17 @@ SALES = [
          notes=STAVROPOL_NOTES, lines=(("BSI D50L100-3", 10, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"))),
     # спецификации № 28, 29, 30 от 05.03.2026; по № 28 в паспорте D63L80-2 — 20 шт, в спецификации — 10
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 28", products_of=MTZ,
-         notes=STAVROPOL_NOTES + " По спецификации D63L80-2 — 10 шт, по паспорту — 20 шт.", lines=(
-             ("BSI D50L100-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"), ("BSI D63L80-2", 20, None, "02/25"),
-             ("BSI D75L100-3", 5, None, "02/25"), ("BSI D75L100-2", 5, None, "02/25"), ("BSI D90L120-3", 10, None, "02/25"),
-             ("BSI D90L120-2", 10, None, "02/25"))),
+         rub_rate=RATE_20260325, notes=STAVROPOL_RUB + " По спецификации D63L80-2 — 10 шт, по паспорту — 20 шт.", lines=(
+             ("BSI D50L100-3", 10, "202.14", "02/25"), ("BSI D60L80-2", 10, "179.47", "02/25"),
+             ("BSI D63L80-2", 20, "179.47", "02/25"), ("BSI D75L100-3", 5, "279.14", "02/25"),
+             ("BSI D75L100-2", 5, "253.06", "02/25"), ("BSI D90L120-3", 10, "402.72", "02/25"),
+             ("BSI D90L120-2", 10, "382.60", "02/25"))),
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 29", products_of=MTZ,
-         notes=STAVROPOL_NOTES, lines=(("BSI D60L80-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"))),
+         rub_rate=RATE_20260325, notes=STAVROPOL_RUB, lines=(
+             ("BSI D60L80-3", 10, "191.27", "02/25"), ("BSI D60L80-2", 10, "179.47", "02/25"))),
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 30", products_of=MTZ,
-         notes=STAVROPOL_NOTES, lines=(("BSI D60L80-3", 1, None, "02/25"), ("BSI D60L80-2", 1, None, "02/25"))),
+         rub_rate=RATE_20260325, notes=STAVROPOL_RUB, lines=(
+             ("BSI D60L80-3", 1, "191.27", "02/25"), ("BSI D60L80-2", 1, "179.47", "02/25"))),
 ]
 # Отгрузки, внесённые прежней версией по ошибке: файл паспорта «18» перезаписан паспортом спецификации № 29
 OBSOLETE_SALES = [(STAVROPOL, "Паспорт № 09/002/25 от 25.03.2026 (номер спецификации не указан")]
@@ -368,8 +374,9 @@ class Command(BaseCommand):
 
         customer, _ = Customer.objects.get_or_create(name=sale.customer)
         done = Shipment.objects.filter(customer=customer)
-        if done.filter(ttn_number=sale.ttn).exists() if sale.ttn else done.filter(notes__startswith=sale.document).exists():
-            self.stdout.write("  уже есть — пропускаю")
+        done = done.filter(ttn_number=sale.ttn) if sale.ttn else done.filter(notes__startswith=sale.document)
+        if existing := done.first():
+            self.fill_prices(sale, existing)
             return
         spec = None
         if sale.contract:
@@ -378,7 +385,7 @@ class Command(BaseCommand):
             spec, _ = Specification.objects.get_or_create(contract=contract, number=sale.spec[0],
                                                           defaults={"date": dt.date.fromisoformat(sale.spec[1])})
         notes = ". ".join(n for n in (sale.document, f"Договор № {contract.number}, спецификация № {spec.number}" if spec else "",
-                                      sale.notes) if n)
+                                      sale.notes, self.rate_note(sale)) if n).replace("..", ".")
         shipment = Shipment.objects.create(customer=customer, date=dt.date.fromisoformat(sale.date), ttn_number=sale.ttn, notes=notes)
         owner = Customer.objects.get(name=sale.products_of) if sale.products_of else customer
         rows = []
@@ -390,13 +397,41 @@ class Command(BaseCommand):
                      or Batch.objects.filter(number=batch_ref, lines__product=product).first())
             if batch is None:
                 raise ValueError(f"{code}: нет партии {batch_ref}")
-            price = Decimal(price) if price else None
+            price = self.byn(sale, price)
             spec_line = SpecLine.objects.get_or_create(spec=spec, product=product, defaults={"price_byn": price})[0] if spec else None
             rows.append({"product": product, "qty": qty, "price_byn": price, "batch": batch, "spec_line": spec_line})
         services.post_shipment(shipment, rows)
         amount = sum(r["qty"] * r["price_byn"] for r in rows if r["price_byn"])
         self.stdout.write(f"  отгружено {sum(r['qty'] for r in rows)} шт" + (f" на {amount} руб. без НДС" if amount else "")
                           + f" ({shipment.date:%d.%m.%Y})")
+
+    @staticmethod
+    def byn(sale, price):
+        if not price:
+            return None
+        if sale.rub_rate:  # руб. РФ × курс за 100 RUB
+            return (Decimal(price) * Decimal(sale.rub_rate) / 100).quantize(Decimal("0.01"))
+        return Decimal(price)
+
+    @staticmethod
+    def rate_note(sale):
+        if not sale.rub_rate:
+            return ""
+        return f"Цены в руб. РФ пересчитаны в BYN по курсу НБ РБ {sale.rub_rate.replace('.', ',')} BYN за 100 RUB на дату отгрузки"
+
+    def fill_prices(self, sale, shipment):
+        """Отгрузка уже загружена (прежде без цены) — проставить цены, если теперь они известны."""
+        prices = {code: self.byn(sale, price) for code, _, price, _ in sale.lines if price}
+        filled = 0
+        for line in shipment.lines.filter(price_byn__isnull=True).select_related("product"):
+            if line.product.code in prices:
+                line.price_byn = prices[line.product.code]
+                line.save(update_fields=["price_byn"])
+                filled += 1
+        if filled:
+            shipment.notes = ". ".join(n for n in (sale.document, sale.notes, self.rate_note(sale)) if n).replace("..", ".").replace("..", ".")
+            shipment.save(update_fields=["notes"])
+        self.stdout.write(f"  уже есть — проставлены цены в {filled} строках" if filled else "  уже есть — пропускаю")
 
     def product_info(self):
         for (customer, code), info in PRODUCT_INFO.items():
