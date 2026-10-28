@@ -35,6 +35,8 @@ Run $venvPy @("manage.py", "import_cartons")
 Write-Host "Докачиваю документы с Яндекс.Диска (приходы из папки «Закупки»)…"
 & $venvPy manage.py fetch_yandex "$Root\data\source"
 if ($LASTEXITCODE -ne 0) { Write-Host "Не все файлы скачались — недостающие докачаются при следующем обновлении." -ForegroundColor Yellow }
+& $venvPy manage.py import_drawings "$Root\data\source"
+if ($LASTEXITCODE -ne 0) { Write-Host "Чертежи не прикрепились — пришлите текст выше разработчику." -ForegroundColor Yellow }
 if (Test-Path "$Root\data\source\Закупки") {
     # уже загруженные поставки пропускаются — повторный запуск безопасен
     & $venvPy manage.py import_purchases "$Root\data\source\Закупки" --apply

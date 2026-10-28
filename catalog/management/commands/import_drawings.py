@@ -3,7 +3,8 @@
     python manage.py import_drawings /путь/к/папке/Патрубки
 
 Папка — копия папки «Патрубки» с Яндекс.Диска. Путь вида `файл.pdf#page=3` берёт одну страницу
-из многостраничного PDF (так прислан пакет чертежей БелАЗа). Уже прикреплённый файл заменяется.
+из многостраничного PDF (так прислан пакет чертежей БелАЗа). Изменённый файл заменяется, тот же —
+пропускается, поэтому команду можно запускать при каждом обновлении.
 """
 
 import csv
@@ -40,7 +41,10 @@ class Command(BaseCommand):
         with open(catalog, newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 lookup = {"yapib": row["yapib"]} if row["yapib"] else {"yapib": None, "code": row["code"]}
-                product = Product.objects.get(**lookup)
+                product = Product.objects.filter(**lookup).first()
+                if product is None:
+                    missing.append(f"изделие {row['code']} ({row['yapib'] or 'без ЯПИБ'})")
+                    continue
                 for column, kind in COLUMNS.items():
                     ref = row.get(column)
                     if not ref:
@@ -50,8 +54,8 @@ class Command(BaseCommand):
                         missing.append(ref)
                         continue
                     name, data = content
-                    attach(product, kind, name, data)
-                    attached += 1
+                    if attach(product, kind, name, data, page="#page=" in ref):
+                        attached += 1
         self.stdout.write(self.style.SUCCESS(f"Прикреплено файлов: {attached}"))
         for m in missing:
             self.stdout.write(self.style.WARNING(f"Не найден: {m}"))
@@ -71,8 +75,21 @@ def read_ref(root, ref):
         return f"{path.stem} стр.{page}.pdf", out.tobytes()
 
 
-def attach(product, kind, name, data):
+def same_file(drawing, data):
+    try:
+        with drawing.file.open("rb") as fh:
+            return fh.read() == data
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def attach(product, kind, name, data, page=False):
+    """Прикрепить файл; тот же самый файл повторно не записывается. Возвращает чертёж или None.
+    page — страница, вырезанная из PDF: её байты каждый раз другие, сравниваем по имени."""
     drawing = DrawingFile.objects.filter(product=product, kind=kind).first() or DrawingFile(product=product, kind=kind)
+    if drawing.file and (drawing.original_name == name and drawing.file.storage.exists(drawing.file.name)
+                         if page else same_file(drawing, data)):
+        return None
     if drawing.file:
         drawing.file.delete(save=False)
     drawing.file.save(name, ContentFile(data), save=False)
