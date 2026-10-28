@@ -56,15 +56,26 @@ class Command(BaseCommand):
                     name, data = content
                     if attach(product, kind, name, data, page="#page=" in ref):
                         attached += 1
+                        if kind == DrawingFile.Kind.PDF and product.status == Product.Status.DRAWING_PENDING:
+                            product.status = Product.Status.SAMPLE  # чертёж пришёл
+                            product.save()
         self.stdout.write(self.style.SUCCESS(f"Прикреплено файлов: {attached}"))
         for m in missing:
             self.stdout.write(self.style.WARNING(f"Не найден: {m}"))
 
 
 def read_ref(root, ref):
-    """`путь` или `путь#page=N` → (имя файла, байты); None, если файла нет."""
+    """`путь` или `путь#page=N` → (имя файла, байты); None, если файла нет.
+    Путь со звёздочкой (`**/*26.1561*.pdf`) — первый подходящий файл в любой папке: так ждём чертёж,
+    которого ещё нет на Яндекс.Диске, не зная, как его назовут."""
     m = re.fullmatch(r"(.+?)(?:#page=(\d+))?", ref)
-    path = root / m.group(1)
+    if "*" in m.group(1):
+        found = sorted(p for p in root.glob(m.group(1)) if p.is_file())
+        if not found:
+            return None
+        path = found[0]
+    else:
+        path = root / m.group(1)
     if not path.exists():
         return None
     if not m.group(2):

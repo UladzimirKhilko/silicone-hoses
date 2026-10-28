@@ -35,8 +35,6 @@ Run $venvPy @("manage.py", "import_cartons")
 Write-Host "Докачиваю документы с Яндекс.Диска (приходы из папки «Закупки»)…"
 & $venvPy manage.py fetch_yandex "$Root\data\source"
 if ($LASTEXITCODE -ne 0) { Write-Host "Не все файлы скачались — недостающие докачаются при следующем обновлении." -ForegroundColor Yellow }
-& $venvPy manage.py import_drawings "$Root\data\source"
-if ($LASTEXITCODE -ne 0) { Write-Host "Чертежи не прикрепились — пришлите текст выше разработчику." -ForegroundColor Yellow }
 if (Test-Path "$Root\data\source\Закупки") {
     # уже загруженные поставки пропускаются — повторный запуск безопасен
     & $venvPy manage.py import_purchases "$Root\data\source\Закупки" --apply
@@ -53,6 +51,9 @@ Get-ChildItem -LiteralPath "$Root\data\source\Бухгалтерия" -File -Err
         & $venvPy manage.py import_accounting $_.FullName --apply
         if ($LASTEXITCODE -ne 0) { Write-Host "Отчёт $($_.Name) не загрузился — пришлите текст выше разработчику." -ForegroundColor Yellow }
     }
+# чертежи — после приходов: изделия и их ЯПИБ к этому моменту уже есть
+& $venvPy manage.py import_drawings "$Root\data\source"
+if ($LASTEXITCODE -ne 0) { Write-Host "Чертежи не прикрепились — пришлите текст выше разработчику." -ForegroundColor Yellow }
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Start-ScheduledTask -TaskName "Patrubki BSI"
 $version = & $venvPy -c "import hoses.version as v; print(v.VERSION)"
