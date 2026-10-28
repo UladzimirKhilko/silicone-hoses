@@ -56,7 +56,8 @@ class Command(BaseCommand):
                     name, data = content
                     if attach(product, kind, name, data, page="#page=" in ref):
                         attached += 1
-                        if kind == DrawingFile.Kind.PDF and product.status == Product.Status.DRAWING_PENDING:
+                        if kind in (DrawingFile.Kind.PDF, DrawingFile.Kind.SIGNED) \
+                                and product.status == Product.Status.DRAWING_PENDING:
                             product.status = Product.Status.SAMPLE  # чертёж пришёл
                             product.save()
         self.stdout.write(self.style.SUCCESS(f"Прикреплено файлов: {attached}"))
