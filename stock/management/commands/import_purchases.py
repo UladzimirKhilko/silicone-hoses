@@ -27,7 +27,7 @@ from django.db import transaction
 from django.db.models import F
 
 from catalog.codes import normalize_name, parse_parametric
-from catalog.models import Customer, Product
+from catalog.models import Customer, Product, ProductAlias
 from stock import receipt_import, services
 from stock.importers import Invoice, InvoiceLine, ParseError, parse_document, read_rows
 from stock.models import Adjustment, Batch, ReceiptLine, Shipment
@@ -139,6 +139,12 @@ SAMPLES = [
 
 
 # Сведения об изделиях, созданных по документам завода, из документов заказчика (пустые поля заполняются)
+# Одно и то же изделие под другим кодом в документах завода: (заказчик, код в документе, код в каталоге).
+# Код из документа запоминается как синоним; изделие, созданное по нему прежней версией, сливается с каталожным.
+SAME_PRODUCTS = [
+    ("Амкадор", "BSI 150-D38L90/60-3", "BSI 150-D38L60/90-3"),  # инвойс JINHU JH-J-20261009; подтверждено 28.10.2026
+]
+
 PRODUCT_INFO = {
     (MTZ, "BSI D25L140/67-1-M"): {"yapib": "26.1564"},  # соглашение № 59 от 12.08.2026
     (MTZ, "BSI D100L160-COR-3"): {"yapib": "26.1561"},  # чертёж МТЗ; такой же код есть у Гомсельмаша
@@ -253,6 +259,7 @@ class Command(BaseCommand):
         self.errors = []
         try:
             with transaction.atomic():
+                self.same_products()
                 for purchase in PURCHASES:
                     self.stdout.write(f"\n{purchase.invoice}")
                     try:
@@ -484,6 +491,33 @@ class Command(BaseCommand):
         for product in orphans:
             self.stdout.write(f"\nУдалено лишнее изделие без документов: {product.code} ({product.customer})")
             product.delete()
+
+    def same_products(self):
+        for customer, alias, code in SAME_PRODUCTS:
+            target = Product.objects.filter(customer__name=customer, code=code).first()
+            if target is None:
+                continue
+            twin = Product.objects.filter(customer__name=customer, code=alias, notes=NEW_PRODUCT_NOTE).first()
+            if twin is not None:
+                for line in twin.receipt_lines.all():
+                    same = ReceiptLine.objects.filter(batch=line.batch, product=target).first()
+                    if same:  # в партии уже есть — складываем
+                        same.qty_expected += line.qty_expected
+                        if line.qty_received is not None:
+                            same.qty_received = (same.qty_received or 0) + line.qty_received
+                        same.price_cny = same.price_cny or line.price_cny
+                        same.save()
+                        line.delete()
+                    else:
+                        line.product = target
+                        line.save()
+                twin.carton_specs.update(product=target)
+                twin.shipment_lines.update(product=target)
+                twin.aliases.all().delete()
+                twin.delete()
+                self.stdout.write(f"\n{alias} объединено с {code} ({customer})")
+            if not ProductAlias.objects.filter(normalized=normalize_name(alias)).exists():
+                ProductAlias.objects.create(product=target, text=alias, source=ProductAlias.Source.INVOICE)
 
     def product_info(self):
         for (customer, code), info in PRODUCT_INFO.items():
