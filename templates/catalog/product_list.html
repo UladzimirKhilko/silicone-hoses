@@ -57,7 +57,7 @@
         <td class="code"><a href="{{ p.get_absolute_url }}">{% if p.color %}<span class="dot dot-{{ p.color }}" title="{{ p.get_color_display }}"></span>{% endif %}{{ p.code }}</a>
           <div class="sub">{% if p.yapib %}ЯПИБ {{ p.yapib }} · {% endif %}{{ p.get_kind_display|default:"" }} {{ p.size_label }} <span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></div></td>
         <td data-label="Заказчик">{{ p.customer|default:"—" }}</td>
-        <td data-label="Остаток" class="num stock-cell {% if p.on_hand %}strong{% else %}muted{% endif %}">{{ p.on_hand|money:0 }}</td>
+        <td data-label="Остаток" class="num stock-cell {% if p.on_hand %}strong{% else %}muted{% endif %}">{{ p.on_hand|money:0 }}{% if p.unit == "m" %} <span class="muted small">м</span>{% endif %}</td>
         <td data-label="Цена закупки, CNY" class="num">{{ p.factory_price|price }}</td>
         {% if can_see_costs %}<td data-label="Учётная, BYN" class="num">{{ p.landed_price|money }}</td>{% endif %}
         <td data-label="Цена реализации" class="num" {% if p.price_source %}title="{{ p.price_source }}"{% endif %}>{{ p.price|money }}</td>

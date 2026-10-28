@@ -39,6 +39,10 @@ class Product(models.Model):
         BLUE = "blue", "синий"
         RED = "red", "красный"
 
+    class Unit(models.TextChoices):
+        PIECE = "pcs", "шт"
+        METER = "m", "м"
+
     class Status(models.TextChoices):
         DRAWING_PENDING = "drawing_pending", "чертёж ожидается"
         SAMPLE = "sample", "образец"
@@ -61,6 +65,8 @@ class Product(models.Model):
     l1 = models.DecimalField("L1, мм", max_digits=7, decimal_places=1, null=True, blank=True)
     l2 = models.DecimalField("L2, мм", max_digits=7, decimal_places=1, null=True, blank=True)
     status = models.CharField("Статус", max_length=20, choices=Status.choices, default=Status.SAMPLE)
+    unit = models.CharField("Единица", max_length=3, choices=Unit.choices, default=Unit.PIECE,
+                            help_text="Рукава (БелАЗ) ведутся в метрах — решение 28.10.2026")
     min_stock = models.PositiveIntegerField("Минимальный остаток, шт", null=True, blank=True,
                                             help_text="Меньше — изделие попадёт в «Заканчивается». Пусто — по средним отгрузкам")
     notes = models.TextField("Примечание", blank=True)
@@ -108,6 +114,8 @@ class Product(models.Model):
         self.search_text = " ".join(b for b in bits if b).lower()
 
     def save(self, *args, **kwargs):
+        if self.kind == self.Kind.HOSE:
+            self.unit = self.Unit.METER
         self.code_key = normalize_name(self.code)
         self.rebuild_search_text()
         super().save(*args, **kwargs)

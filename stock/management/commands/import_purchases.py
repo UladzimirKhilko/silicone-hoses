@@ -105,8 +105,7 @@ PURCHASES = [
                    "и «BSI D50L100-2» (70 шт) — по инвойсу это 235 шт D89L1000-2. Дата приёмки — дата упаковочного "
                    "листа (15.07.2026), фактическую уточните."),
     Purchase("JH-J-20260925", "БелАЗ", ("Белаз/сентябрь 2026 _ на производстве/Инвойс_JH-J-20260925_рус.xlsx",),
-             notes="Заказ на производстве, завод XINGTAI JINHU TECHNOLOGY. В инвойсе количество в метрах — "
-                   "переведено в штуки по длине изделия (L10000 — 10 м, L5000 — 5 м, L1000 — 1 м), цена — за штуку."),
+             notes="Заказ на производстве, завод XINGTAI JINHU TECHNOLOGY. Рукава БелАЗа ведутся в метрах, цена — за метр."),
 ]
 
 
@@ -312,6 +311,9 @@ class Command(BaseCommand):
         existing = self.existing(purchase)
         if existing is None and (done := Batch.objects.filter(invoice=purchase.invoice).first()):
             self.update_loaded(purchase, done, customer)
+            if done.status == Batch.Status.IN_TRANSIT and purchase.lines:
+                rows = self.resolve(purchase, receipt_import.rows_from(receipt_import.build_draft(invoice, packing)), customer)
+                self.resync(done, rows)
             return
         if purchase.existing and existing is None:
             raise ValueError(f"не нашёл партию от {purchase.existing} — сначала перенесите Excel МТЗ")
@@ -491,6 +493,21 @@ class Command(BaseCommand):
         for product in orphans:
             self.stdout.write(f"\nУдалено лишнее изделие без документов: {product.code} ({product.customer})")
             product.delete()
+
+    def resync(self, batch, rows):
+        """Поставка ещё в пути — количество и цена завода по документам (например, рукава БелАЗа
+        переведены из штук обратно в метры, решение 28.10.2026)."""
+        lines = {line.product_id: line for line in batch.lines.all()}
+        for product_id, m in receipt_import.merge_rows(rows, {}).items():
+            line = lines.get(product_id)
+            qty = m["inv"] if m["inv"] is not None else m["pl"]
+            price = Decimal(m["price"]) if m["price"] else None
+            if line is None or (line.qty_expected == qty and line.price_cny == price):
+                continue
+            self.stdout.write(f"  · {line.product.code}: {line.qty_expected} → {qty} {line.product.get_unit_display()}"
+                              + (f", цена {line.price_cny} → {price}" if line.price_cny != price else ""))
+            line.qty_expected, line.price_cny = qty, price
+            line.save(update_fields=["qty_expected", "price_cny"])
 
     def same_products(self):
         for customer, alias, code in SAME_PRODUCTS:

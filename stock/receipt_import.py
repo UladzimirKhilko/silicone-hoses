@@ -102,9 +102,13 @@ def is_meters(unit):
 
 
 def meters_to_pieces(product_id, qty, price):
-    """Рукав продаётся отрезками длины L (BSI D10L10000-2 — 10 м). Инвойс в метрах → штуки
-    и цена за штуку. Не делится нацело или длина неизвестна — оставляем как есть с пометкой."""
-    code = Product.objects.filter(pk=product_id).values_list("code", flat=True).first()
+    """Инвойс в метрах. Изделие ведётся в метрах (рукава БелАЗа) — как есть. Иначе изделие — отрезок
+    длины L (BSI D10L10000-2 — 10 м): метры → штуки и цена за штуку; не делится нацело или длина
+    неизвестна — оставляем как есть с пометкой."""
+    product = Product.objects.filter(pk=product_id).first()
+    if product is not None and product.unit == Product.Unit.METER:
+        return qty, price, f"в метрах: {qty} м"
+    code = product.code if product else None
     parsed = parse_parametric(code) if code else None
     length = parsed.l1 / 1000 if parsed and parsed.l1 >= 1000 else None
     if length and qty % length == 0:

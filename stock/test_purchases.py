@@ -196,3 +196,11 @@ def test_sale_in_roubles_converted_by_rate_and_filled_later(db, tmp_path, monkey
     call_command("import_purchases", str(tmp_path), "--apply")
     shipment = Shipment.objects.get()
     assert shipment.lines.get().price_byn == Decimal("6.55") and "3,6507" in shipment.notes  # 179,47 × 3,6507 / 100
+
+
+def test_hoses_in_meters_stay_in_meters(belaz):
+    hose = Product.objects.create(code="BSI D10L10000-2", customer=belaz, kind=Product.Kind.HOSE)
+    assert hose.unit == Product.Unit.METER
+    _, inv = parse_document(_invoice("JH-J-20260925", [("D10L10000-2", 1200, 7.35)], unit=True))
+    row = receipt_import.rows_from(receipt_import.build_draft(inv))[0]
+    assert (row.product_id, row.qty_invoice, Decimal(row.price)) == (hose.pk, 1200, Decimal("7.35"))

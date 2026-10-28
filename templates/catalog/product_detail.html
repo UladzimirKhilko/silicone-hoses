@@ -46,9 +46,9 @@
         <dt>Тип</dt><dd>{{ product.get_kind_display|default:"—" }}</dd>
         <dt>Размеры</dt><dd>{{ product.size_label|default:"—" }}</dd>
         <dt>Цвет</dt><dd>{% if product.color %}<span class="dot dot-{{ product.color }}"></span>{{ product.get_color_display }}{% else %}—{% endif %}</dd>
-        <dt>Остаток</dt><dd class="strong">{{ on_hand }} шт</dd>
-        {% if in_transit %}<dt>В пути</dt><dd>{{ in_transit }} шт</dd>{% endif %}
-        {% if reserved %}<dt>Резерв</dt><dd>{{ reserved }} шт <span class="muted small">под заявки · свободно {{ free }}</span></dd>{% endif %}
+        <dt>Остаток</dt><dd class="strong">{{ on_hand }} {{ product.get_unit_display }}</dd>
+        {% if in_transit %}<dt>В пути</dt><dd>{{ in_transit }} {{ product.get_unit_display }}</dd>{% endif %}
+        {% if reserved %}<dt>Резерв</dt><dd>{{ reserved }} {{ product.get_unit_display }} <span class="muted small">под заявки · свободно {{ free }}</span></dd>{% endif %}
       </dl>
       {% if product.notes %}<p class="note">{{ product.notes|linebreaksbr }}</p>{% endif %}
     </section>

@@ -37,7 +37,7 @@
   {% for l in lines %}
     <tr>
       <td class="code"><a href="{{ l.product.get_absolute_url }}">{{ l.product.code }}</a> <span class="muted small">{{ l.product.customer|default:"" }}</span></td>
-      <td data-label="По документам" class="num">{{ l.qty_expected }}</td>
+      <td data-label="По документам" class="num">{{ l.qty_expected }}{% if l.product.unit == "m" %} <span class="muted small">м</span>{% endif %}</td>
       <td data-label="Принято" class="num">
         {% if batch.is_received %}{{ l.qty_received|default:l.qty_expected }}{% if l.shortage > 0 %} <span class="minus">(−{{ l.shortage }})</span>{% endif %}
         {% else %}<input type="number" min="0" name="received_{{ l.pk }}" value="{{ l.qty_expected }}" class="qty">{% endif %}
