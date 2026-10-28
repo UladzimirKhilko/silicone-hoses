@@ -625,7 +625,7 @@ class Command(BaseCommand):
                 else:
                     if line.qty_expected != qty:
                         self.stdout.write(f"  · {product.code}: в партии {line.qty_expected} шт, в документах {qty} шт — не меняю")
-                    if price and line.price_cny != price and (line.price_cny is None or abs(line.price_cny - price) < Decimal("0.01")):
+                    if price and line.price_cny != price and (line.price_cny is None or abs(line.price_cny - price) <= Decimal("0.01")):
                         line.price_cny = price  # в Excel цена была округлена до копеек
                         line.save(update_fields=["price_cny"])
                         changes.append(f"точная цена {product.code}")

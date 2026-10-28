@@ -596,3 +596,10 @@ def test_same_file_twice_is_taken_once(client_in, import_catalog):
     resp = client_in.post(reverse("stock:batch_import"), {"files": [first, second, _xlsx(INVOICE_TS250869)]}, follow=True)
     assert "несколько" not in resp.content.decode()
     assert any("тот же файл" in n for n in client_in.session["receipt_import_draft"]["notes"])
+
+
+def test_pdf_continuation_table_with_extra_empty_column():
+    from .importers import _drop_empty_columns
+
+    page2 = [["25", "BSI D90L180-COR-3", None, "32", "1"], [None, None, None, "33", "1"]]
+    assert _drop_empty_columns(page2, 1) == [["25", "BSI D90L180-COR-3", "32", "1"], [None, None, "33", "1"]]

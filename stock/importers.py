@@ -55,20 +55,32 @@ def _pdf_rows(data):
     import pymupdf
 
     doc = pymupdf.open(stream=data, filetype="pdf")
-    rows, text = [], ""
+    rows, text, width = [], "", None
     for page in doc:
         page_text = page.get_text()
         if not text:  # шапка первой страницы (номер, дата) часто напечатана вне таблицы
             rows.extend([line] for line in page_text.splitlines()[:40] if line.strip())
         text += page_text
         for table in page.find_tables().tables:
-            rows.extend(table.extract())
+            part = table.extract()
+            if width is None:
+                width = max((len(r) for r in part), default=None)
+            elif part and len(part[0]) > width:
+                part = _drop_empty_columns(part, len(part[0]) - width)
+            rows.extend(part)
     if not text.strip():
         raise ParseError("PDF — это скан (картинка без текста), прочитать его нельзя. "
                          "Попросите у завода Excel или PDF, сохранённый из Excel.")
     if not any(len(r) > 2 for r in rows):
         raise ParseError("В PDF не нашлось таблицы. Нужен инвойс или упаковочный лист с таблицей позиций.")
     return rows
+
+
+def _drop_empty_columns(rows, extra):
+    """Продолжение таблицы на следующей странице иногда распознаётся с лишними пустыми колонками
+    (колонки сдвигаются) — убираем до `extra` колонок, пустых во всех строках."""
+    empty = [i for i in range(len(rows[0])) if all(i >= len(r) or r[i] in (None, "") for r in rows)][:extra]
+    return [[c for i, c in enumerate(r) if i not in empty] for r in rows]
 
 
 def _text(v):
