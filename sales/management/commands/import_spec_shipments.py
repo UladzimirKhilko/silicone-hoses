@@ -107,14 +107,20 @@ class Command(BaseCommand):
             self.stdout.write(f"  {spec}: {len(spec_lines)} поз., {sum(line['limit'] for line in spec_lines)} шт")
 
         ttn, ship_date = data["waybill"]
-        if Shipment.objects.filter(customer=customer, ttn_number=ttn).exists():
-            self.stdout.write(f"Отгрузка по накладной {ttn}: уже есть")
-            return
-        shipment = Shipment.objects.create(customer=customer, date=ship_date, ttn_number=ttn,
-                                           notes=f"Расходная накладная №{ttn} от {ship_date:%d.%m.%Y}")
         rows = [{"product": products[line["name"]], "qty": line["shipped"], "price_byn": line["price"],
                  "spec_line": SpecLine.objects.get(spec=specs[line["spec"]], product=products[line["name"]])}
                 for line in data["lines"] if line["shipped"]]
+        # номер ТТН — по цифрам: из отчёта бухгалтерии отгрузка могла прийти раньше, без серии «ЕМ» и без спецификаций
+        shipment = Shipment.objects.filter(customer=customer, ttn_number__startswith=ttn.split()[0]).first()
+        if shipment is not None:
+            if not shipment.lines.filter(spec_line__isnull=True).exists():
+                self.stdout.write(f"Отгрузка по накладной {ttn}: уже есть")
+                return
+            shipment.lines.all().delete()  # привязать к спецификациям и ценам
+            self.stdout.write(f"Отгрузка по накладной {ttn}: была без спецификаций — строки заменены")
+        else:
+            shipment = Shipment.objects.create(customer=customer, date=ship_date, ttn_number=ttn,
+                                               notes=f"Расходная накладная №{ttn} от {ship_date:%d.%m.%Y}")
         try:
             services.post_shipment(shipment, rows)
         except services.InsufficientStock as e:

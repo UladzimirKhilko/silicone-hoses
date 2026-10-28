@@ -152,7 +152,7 @@ class Sale:
     customer: str
     date: str
     document: str  # по нему отгрузка узнаётся при повторном запуске
-    lines: tuple  # (код, шт, цена без НДС BYN или None, партия — инвойс или номер партии)
+    lines: tuple  # (код, шт, цена без НДС BYN или None, партия — инвойс, номер партии или None)
     ttn: str = ""
     contract: tuple | None = None  # (номер, дата)
     spec: tuple | None = None  # (номер, дата)
@@ -182,9 +182,9 @@ SALES = [
          notes=STAVROPOL_NOTES, lines=(("BSI D50L100-3", 10, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"))),
     # спецификации № 28, 29, 30 от 05.03.2026; по № 28 в паспорте D63L80-2 — 20 шт, в спецификации — 10
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 28", products_of=MTZ,
-         rub_rate=RATE_20260325, notes=STAVROPOL_RUB + " По спецификации D63L80-2 — 10 шт, по паспорту — 20 шт.", lines=(
+         rub_rate=RATE_20260325, notes=STAVROPOL_RUB + " D63L80-2 — 10 шт по спецификации и бухгалтерии (в паспорте 20).", lines=(
              ("BSI D50L100-3", 10, "202.14", "02/25"), ("BSI D60L80-2", 10, "179.47", "02/25"),
-             ("BSI D63L80-2", 20, "179.47", "02/25"), ("BSI D75L100-3", 5, "279.14", "02/25"),
+             ("BSI D63L80-2", 10, "179.47", "02/25"), ("BSI D75L100-3", 5, "279.14", "02/25"),
              ("BSI D75L100-2", 5, "253.06", "02/25"), ("BSI D90L120-3", 10, "402.72", "02/25"),
              ("BSI D90L120-2", 10, "382.60", "02/25"))),
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 29", products_of=MTZ,
@@ -193,6 +193,17 @@ SALES = [
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 30", products_of=MTZ,
          rub_rate=RATE_20260325, notes=STAVROPOL_RUB, lines=(
              ("BSI D60L80-3", 1, "191.27", "02/25"), ("BSI D60L80-2", 1, "179.47", "02/25"))),
+    # Казахстан: в 1С отгрузки в 2026 нет, остатки на 01.01.2026 меньше ровно на спецификацию — отгружено в 2025.
+    # Точной даты нет — дата счёт-фактуры 09/267/1; курс НБ РБ на 05.12.2025.
+    Sale("ТД Белорусский Трактор (Казахстан)", "2025-12-05", "Счёт-фактура № 09/267/1 от 05.12.2025, спецификация № 1",
+         products_of=MTZ, rub_rate="3.7627",
+         notes="Договор № 09/267 от 05.12.2025, ТОО «Торговый Дом Белорусский Трактор», г. Астана. Дата отгрузки "
+               "условная (по счёт-фактуре)", lines=(
+             ("BSI D50L100-3", 5, "203", None), ("BSI D63L80-2", 5, "180", None), ("BSI D63L80-3", 4, "192", None),
+             ("BSI D75L100-2", 5, "253", None), ("BSI D75L100-3", 5, "280", None),
+             ("BSI 90-D53L210/140-1", 5, "835", None), ("BSI 90-D38L150/140-1", 5, "543", None),
+             ("BSI 30-D38L95/55-1", 5, "383", None), ("BSI D54L80-1", 5, "177", None),
+             ("BSI 90-D38L170/150-1", 5, "630", None), ("BSI 30-D38L120/55-1", 5, "460", None))),
 ]
 # Отгрузки, внесённые прежней версией по ошибке: файл паспорта «18» перезаписан паспортом спецификации № 29
 OBSOLETE_SALES = [(STAVROPOL, "Паспорт № 09/002/25 от 25.03.2026 (номер спецификации не указан")]
@@ -402,10 +413,12 @@ class Command(BaseCommand):
             product = Product.objects.filter(code=code, customer=owner).first()
             if product is None:
                 raise ValueError(f"нет изделия {code}")
-            batch = (Batch.objects.filter(invoice=batch_ref, lines__product=product).first()
-                     or Batch.objects.filter(number=batch_ref, lines__product=product).first())
-            if batch is None:
-                raise ValueError(f"{code}: нет партии {batch_ref}")
+            batch = None  # без партии — из самой старой с остатком
+            if batch_ref:
+                batch = (Batch.objects.filter(invoice=batch_ref, lines__product=product).first()
+                         or Batch.objects.filter(number=batch_ref, lines__product=product).first())
+                if batch is None:
+                    raise ValueError(f"{code}: нет партии {batch_ref}")
             price = self.byn(sale, price)
             spec_line = SpecLine.objects.get_or_create(spec=spec, product=product, defaults={"price_byn": price})[0] if spec else None
             rows.append({"product": product, "qty": qty, "price_byn": price, "batch": batch, "spec_line": spec_line})

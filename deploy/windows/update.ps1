@@ -45,6 +45,12 @@ if (Test-Path "$Root\data\source\Закупки") {
         if ($LASTEXITCODE -ne 0) { Write-Host "Файл $($_.Name) не загрузился — пришлите текст выше разработчику." -ForegroundColor Yellow }
     }
 }
+# отчёты бухгалтерии (1С) «Отчет о движении матценностей» — папка «Бухгалтерия» на Яндекс.Диске
+Get-ChildItem -LiteralPath "$Root\data\source\Бухгалтерия" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in ".xls", ".xlsx" } | Sort-Object Name | ForEach-Object {
+        & $venvPy manage.py import_accounting $_.FullName --apply
+        if ($LASTEXITCODE -ne 0) { Write-Host "Отчёт $($_.Name) не загрузился — пришлите текст выше разработчику." -ForegroundColor Yellow }
+    }
 Run $venvPy @("manage.py", "collectstatic", "--noinput", "-v", "0")
 Start-ScheduledTask -TaskName "Patrubki BSI"
 $version = & $venvPy -c "import hoses.version as v; print(v.VERSION)"
