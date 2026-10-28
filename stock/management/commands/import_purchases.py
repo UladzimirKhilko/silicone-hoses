@@ -245,6 +245,7 @@ class Command(BaseCommand):
                         self.errors.append(f"{purchase.invoice}: {e}")
                         self.stdout.write(self.style.ERROR(f"  ошибка: {e}"))
                 self.product_info()
+                self.remove_orphans()
                 for samples in SAMPLES:
                     self.stdout.write(f"\nОбразцы {samples.customer}")
                     try:
@@ -343,6 +344,8 @@ class Command(BaseCommand):
             if product is None and owner is None and existing is not None:
                 product = Product.objects.filter(code_key=key, receipt_lines__batch=existing).first()
             if product is None:
+                if purchase.only_invoice_items and row.qty_invoice is None:
+                    continue  # строка общего упаковочного листа из другой поставки
                 if owner is None:
                     raise ValueError(f"«{name}»: не знаю заказчика")
                 product = self.new_product(key, owner)
@@ -454,6 +457,16 @@ class Command(BaseCommand):
             shipment.notes = ". ".join(n for n in (sale.document, sale.notes, self.rate_note(sale)) if n).replace("..", ".").replace("..", ".")
             shipment.save(update_fields=["notes"])
         self.stdout.write(f"  уже есть — проставлены цены в {filled} строках" if filled else "  уже есть — пропускаю")
+
+    def remove_orphans(self):
+        """Изделия, созданные командой, без единого документа (прежние версии создавали их по строкам
+        общего упаковочного листа другой поставки) — удаляются."""
+        orphans = Product.objects.filter(notes=NEW_PRODUCT_NOTE, receipt_lines__isnull=True, shipment_lines__isnull=True,
+                                         adjustment_lines__isnull=True, spec_lines__isnull=True, drawing_files__isnull=True,
+                                         request_lines__isnull=True, carton_specs__isnull=True)
+        for product in orphans:
+            self.stdout.write(f"\nУдалено лишнее изделие без документов: {product.code} ({product.customer})")
+            product.delete()
 
     def product_info(self):
         for (customer, code), info in PRODUCT_INFO.items():
