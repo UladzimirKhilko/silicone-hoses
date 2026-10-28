@@ -24,7 +24,16 @@ if ((Resolve-Path $Target).Path.TrimEnd("\") -eq $Source.TrimEnd("\")) {
     throw "Запустите скрипт из распакованного архива, а не из папки программы $Target."
 }
 
-Write-Host "Новая версия: $Source"
+# Та же версия, что уже стоит, — значит, распакован старый архив (браузер мог сохранить новый как «…(1).zip»)
+$versionOf = { param($dir) $f = Join-Path $dir "hoses\version.py"; if (Test-Path $f) { (Select-String -Path $f -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value } }
+$newVersion = & $versionOf $Source
+$oldVersion = & $versionOf $Target
+if ($newVersion -and $newVersion -eq $oldVersion) {
+    Write-Host "В архиве та же версия, что уже установлена: $newVersion." -ForegroundColor Red
+    Write-Host "Удалите папку $Source и старый ZIP, скачайте ZIP заново и распакуйте." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Новая версия: $Source ($newVersion, сейчас установлена $oldVersion)"
 Write-Host "Папка программы: $Target"
 Write-Host "Останавливаю программу…"
 Stop-ScheduledTask -TaskName "Patrubki BSI" -ErrorAction SilentlyContinue

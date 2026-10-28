@@ -76,6 +76,13 @@ def walk(public_key, path="/"):
             return
 
 
+def local_path(root, path):
+    """Путь на диске. Windows не допускает пробел и точку в конце имени папки или файла
+    («Заказ в производстве ») — такие символы убираем."""
+    parts = [part.rstrip(" .") or "_" for part in path.strip("/").split("/")]
+    return root.joinpath(*parts)
+
+
 class Command(BaseCommand):
     help = "Скачать папку «Патрубки» с Яндекс.Диска"
 
@@ -88,7 +95,7 @@ class Command(BaseCommand):
         got = skipped = 0
         failed = []
         for item in walk(url):
-            dst = root / item["path"].lstrip("/")
+            dst = local_path(root, item["path"])
             if dst.exists() and dst.stat().st_size == item["size"]:
                 skipped += 1
                 continue
