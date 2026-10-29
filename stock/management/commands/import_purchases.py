@@ -180,28 +180,40 @@ class Sale:
     spec: tuple | None = None  # (номер, дата)
     products_of: str | None = None  # чьи изделия (торговым домам МТЗ — изделия МТЗ)
     rub_rate: str | None = None  # цены в строках — руб. РФ; курс НБ РБ, BYN за 100 RUB на дату отгрузки
+    was: str = ""  # отгрузка была внесена прежней версией по другому документу (начало примечания) — уточнить её
     notes: str = ""
 
 
 STAVROPOL = "ТД МТЗ-Ставрополь"
-STAVROPOL_NOTES = "Договор № 07/203 от 09.12.2024, цены в руб. РФ — в сервис не перенесены."
 STAVROPOL_RUB = "Договор № 07/203 от 09.12.2024."
 RATE_20260325 = "3.6507"  # НБ РБ, BYN за 100 RUB на 25.03.2026
+RATE_20251210 = "3.7720"  # НБ РБ, BYN за 100 RUB на 10.12.2025
 SALES = [
     Sale("БелАЗ", "2026-09-07", "ТТН ЕМ № 3077598 от 07.09.2026", ttn="3077598",
          contract=("450-01509", "2026-04-25"), spec=("10", "2026-07-06"), lines=(
              ("BSI D51L1000-2", 45, "38.00", "TS2406188"), ("BSI D89L1000-2", 235, "66.00", "TS2406188"),
              ("BSI D127L1000-2", 21, "90.00", "TS2406188"))),
     # паспорта отгрузок, номер ТТН в них не заполнен
-    Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 17", products_of=MTZ,
-         notes=STAVROPOL_NOTES, lines=(
-             ("BSI D50L100-3", 10, None, "02/25"), ("BSI D60L80-3", 10, None, "02/25"), ("BSI D60L80-2", 10, None, "02/25"),
-             ("BSI D63L80-2", 20, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"), ("BSI D75L100-2", 10, None, "02/25"))),
-    Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 20", products_of=MTZ,
-         notes=STAVROPOL_NOTES, lines=(
-             ("BSI D50L100-3", 2, None, "02/25"), ("BSI D60L80-3", 1, None, "02/25"), ("BSI D90L120-3", 1, None, "01/25"))),
-    Sale(STAVROPOL, "2025-12-09", "Паспорт № 09/002/25 от 09.12.2025, спецификация № 21", products_of=MTZ,
-         notes=STAVROPOL_NOTES, lines=(("BSI D50L100-3", 10, None, "02/25"), ("BSI D75L100-3", 10, None, "02/25"))),
+    # ТТН от 10.12.2025 (паспорта от 09.12.2025); цены — руб. РФ по спецификациям от 02.12.2025
+    Sale(STAVROPOL, "2025-12-10", "ТТН № 1191387 ЮП от 10.12.2025, спецификация № 17 от 02.12.2025", ttn="1191387",
+         products_of=MTZ, rub_rate=RATE_20251210, notes=STAVROPOL_RUB,
+         was="Паспорт № 09/002/25 от 09.12.2025, спецификация № 17", lines=(
+             ("BSI D50L100-3", 10, "202.14", "02/25"), ("BSI D60L80-3", 10, "191.27", "02/25"),
+             ("BSI D60L80-2", 10, "179.47", "02/25"), ("BSI D63L80-2", 20, "179.47", "02/25"),
+             ("BSI D75L100-3", 10, "279.14", "02/25"), ("BSI D75L100-2", 10, "253.06", "02/25"))),
+    Sale(STAVROPOL, "2025-12-10", "ТТН № 1191388 ЮП от 10.12.2025, спецификация № 18 от 02.12.2025", ttn="1191388",
+         products_of=MTZ, rub_rate=RATE_20251210, notes=STAVROPOL_RUB, lines=(
+             ("BSI D50L100-3", 10, "202.14", "02/25"), ("BSI D63L80-2", 7, "179.47", "02/25"),
+             ("BSI D75L100-3", 10, "279.14", "02/25"))),
+    Sale(STAVROPOL, "2025-12-10", "ТТН от 10.12.2025 (номер в файле не указан), спецификация № 20 от 02.12.2025",
+         products_of=MTZ, rub_rate=RATE_20251210, notes=STAVROPOL_RUB,
+         was="Паспорт № 09/002/25 от 09.12.2025, спецификация № 20", lines=(
+             ("BSI D50L100-3", 2, "202.14", "02/25"), ("BSI D60L80-3", 1, "191.27", "02/25"),
+             ("BSI D90L120-3", 1, "402.72", "01/25"))),
+    Sale(STAVROPOL, "2025-12-10", "ТТН от 10.12.2025 (номер в файле не указан), спецификация № 21 от 02.12.2025",
+         products_of=MTZ, rub_rate=RATE_20251210, notes=STAVROPOL_RUB,
+         was="Паспорт № 09/002/25 от 09.12.2025, спецификация № 21", lines=(
+             ("BSI D50L100-3", 10, "202.14", "02/25"), ("BSI D75L100-3", 10, "279.14", "02/25"))),
     # спецификации № 28, 29, 30 от 05.03.2026; по № 28 в паспорте D63L80-2 — 20 шт, в спецификации — 10
     Sale(STAVROPOL, "2026-03-25", "Паспорт № 09/002/25 от 25.03.2026, спецификация № 28", products_of=MTZ,
          rub_rate=RATE_20260325, notes=STAVROPOL_RUB + " D63L80-2 — 10 шт по спецификации и бухгалтерии (в паспорте 20).", lines=(
@@ -424,7 +436,15 @@ class Command(BaseCommand):
         customer, _ = Customer.objects.get_or_create(name=sale.customer)
         done = Shipment.objects.filter(customer=customer)
         done = done.filter(ttn_number=sale.ttn) if sale.ttn else done.filter(notes__startswith=sale.document)
-        if existing := done.first():
+        existing = done.first()
+        if existing is None and sale.was:
+            existing = Shipment.objects.filter(customer=customer, notes__startswith=sale.was).first()
+            if existing is not None:  # внесена прежней версией — уточняем дату, ТТН, примечание
+                existing.date, existing.ttn_number = dt.date.fromisoformat(sale.date), sale.ttn
+                existing.notes = ". ".join(n for n in (sale.document, sale.notes, self.rate_note(sale)) if n).replace("..", ".")
+                existing.save()
+                self.stdout.write(f"  уточнена: {sale.was} → {sale.document}")
+        if existing is not None:
             self.fill_prices(sale, existing)
             return
         spec = None

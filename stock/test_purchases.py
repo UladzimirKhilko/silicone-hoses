@@ -196,6 +196,14 @@ def test_sale_in_roubles_converted_by_rate_and_filled_later(db, tmp_path, monkey
     call_command("import_purchases", str(tmp_path), "--apply")
     shipment = Shipment.objects.get()
     assert shipment.lines.get().price_byn == Decimal("6.55") and "3,6507" in shipment.notes  # 179,47 × 3,6507 / 100
+    # позже нашлась ТТН: отгрузка уточняется по прежнему документу, а не дублируется
+    ttn = cmd.Sale(customer="ТД", date="2026-03-26", document="ТТН № 1 от 26.03.2026", ttn="1", products_of="МТЗ",
+                   was="Паспорт от 25.03.2026", rub_rate="3.6507", lines=(("BSI D60L80-2", 10, "179.47", "02/25"),))
+    monkeypatch.setattr(cmd, "SALES", [ttn])
+    for _ in range(2):
+        call_command("import_purchases", str(tmp_path), "--apply")
+    shipment = Shipment.objects.get()
+    assert (shipment.ttn_number, shipment.date) == ("1", dt.date(2026, 3, 26)) and shipment.notes.startswith("ТТН № 1")
 
 
 def test_hoses_in_meters_stay_in_meters(belaz):
