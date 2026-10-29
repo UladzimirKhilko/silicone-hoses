@@ -33,6 +33,13 @@ if ($newVersion -and $newVersion -eq $oldVersion) {
     Write-Host "Удалите папку $Source и старый ZIP, скачайте ZIP заново и распакуйте." -ForegroundColor Red
     exit 1
 }
+# Версия в архиве старше установленной — распакован старый ZIP (откат не делаем)
+$number = { param($v) if ($v -match '^(\d+(\.\d+)+)') { $n = $Matches[1]; if ($n -notmatch '\.\d+\.') { $n += ".0" }; [version]$n } }
+if ($newVersion -and $oldVersion -and (& $number $newVersion) -lt (& $number $oldVersion)) {
+    Write-Host "В архиве СТАРАЯ версия $newVersion, а установлена $oldVersion — обновление отменено." -ForegroundColor Red
+    Write-Host "Удалите папку $Source и все скачанные ZIP, скачайте ZIP заново по прямой ссылке и распакуйте." -ForegroundColor Red
+    exit 1
+}
 Write-Host "Новая версия: $Source ($newVersion, сейчас установлена $oldVersion)"
 Write-Host "Папка программы: $Target"
 Write-Host "Останавливаю программу…"
