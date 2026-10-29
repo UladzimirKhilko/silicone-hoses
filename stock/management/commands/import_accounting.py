@@ -46,7 +46,17 @@ SAMPLE_TTNS = {  # опытные образцы: в 1С — расход по �
     "1247286": "опытные образцы по инвойсу TS2601093",
     "3077456": "соглашение № 59 от 12.08.2026",
     "3077636": "соглашение о передаче образцов D100L160-COR-3",
+    "3077953": "соглашение № 30 от 11.04.2024",
 }
+# Опытные образцы, которые в 1С числились не на складе ТЭСО (в его отчёт не входят), — списываются по своей ТТН.
+# До даты ТТН в сервисе они на складе, поэтому к остаткам ТЭСО на начало и конец отчёта прибавляются.
+OTHER_STORE = [
+    {"ttn": "3077953", "date": dt.date(2026, 10, 29), "customer": "МТЗ", "qty": 2,
+     "notes": "ТТН № 3077953 ЮВ от 29.10.2026: опытные образцы МТЗ по соглашению № 30 от 11.04.2024 (без выставления счёта)",
+     "codes": ("30-D38L95/55-1", "90-D38L150/140-1", "90-D53L210/140-1", "90-D70L110/130-2", "90-D90L120/120-3", "D102L80-2",
+               "D50L100-3", "D54L80-1", "D60L80-2", "D60L80-3", "D63L80-2", "D63L80-3", "D70L100-2", "D75L100-2", "D75L100-3",
+               "D80L100-3", "D90L120-2", "D90L120-3", "D90L180-COR-2", "D90L180-COR-3")},
+]
 # В 1С числятся, но фактически переданы БелАЗу без документов (списаны в сервисе)
 KEEP_SERVICE = {"D60L1000-2", "D89L1000-2", "D102L1000-2"}
 NOTE = "по отчёту бухгалтерии (1С)"
@@ -70,6 +80,11 @@ def customer_for(party):
         if word.lower() in party.lower():
             return Customer.objects.get_or_create(name=name)[0]
     raise ValueError(f"не знаю заказчика «{party}»")
+
+
+def held_elsewhere(key, on_date):
+    """Сколько штук изделия на дату лежит вне склада ТЭСО (OTHER_STORE)."""
+    return sum(e["qty"] for e in OTHER_STORE if key in e["codes"] and e["date"] > on_date)
 
 
 def balance(products, on_date):
@@ -104,6 +119,7 @@ class Command(BaseCommand):
                 self.receipts()
                 self.opening()
                 self.issues()
+                self.other_store()
                 self.closing()
                 if not apply:
                     raise Rollback
@@ -162,8 +178,15 @@ class Command(BaseCommand):
     # --- 2. Остаток на начало ---
 
     def opening(self):
+        """Остаток на начало: одна корректировка на разницу с 1С. Прежняя (от прошлой загрузки) пересчитывается."""
         day = self.ledger.date_from - dt.timedelta(days=1)
-        plus, minus = [], []
+        prefix = f"Приведение к остаткам бухгалтерии на {self.ledger.date_from:%d.%m.%Y}"
+        old = list(Adjustment.objects.filter(date=day, notes__startswith=prefix).prefetch_related("lines"))
+        old_effect = defaultdict(int)  # что прежняя корректировка уже сделала с остатком изделия
+        for adjustment in old:
+            for line in adjustment.lines.all():
+                old_effect[line.product_id] += line.qty * adjustment.sign
+        wanted = {}
         costs = 0
         for item in self.ledger.items:
             products = self.products(item)
@@ -172,25 +195,42 @@ class Command(BaseCommand):
                 costs += self.opening_cost(products, item, day)
             if key in KEEP_SERVICE:
                 continue
-            diff = item.opening_qty - balance(products, day)
+            have = {p: balance([p], day) - old_effect[p.pk] for p in products}
+            diff = item.opening_qty + held_elsewhere(key, day) - sum(have.values())
             if diff > 0:
-                plus.append({"product": self.pick(products, "МТЗ"), "qty": diff})
+                wanted[self.pick(products, "МТЗ"), Adjustment.Kind.INVENTORY_PLUS] = diff
             elif diff < 0:
-                have = {p: balance([p], day) for p in products}
-                product = max(have, key=have.get)
-                minus.append({"product": product, "qty": -diff})
+                wanted[max(have, key=have.get), Adjustment.Kind.INVENTORY_MINUS] = -diff
         self.stdout.write(f"\nОстатки на {self.ledger.date_from:%d.%m.%Y}: учётная цена проставлена в {costs} строках партий")
-        notes = (f"Приведение к остаткам бухгалтерии на {self.ledger.date_from:%d.%m.%Y} ({NOTE}). Причина расхождения "
-                 "не установлена (отгрузки или образцы без документов в сервисе).")
-        for kind, lines in ((Adjustment.Kind.INVENTORY_MINUS, minus), (Adjustment.Kind.INVENTORY_PLUS, plus)):
+        current = {(line.product, a.kind): line.qty for a in old for line in a.lines.select_related("product")}
+        if current == wanted:
+            self.stdout.write("  остатки совпадают с бухгалтерией" if not wanted else "  корректировка на начало — без изменений")
+            return
+        for adjustment in old:
+            adjustment.delete()
+        notes = (f"{prefix} ({NOTE}). Причина расхождения не установлена (отгрузки или образцы без документов в сервисе).")
+        for kind, sign in ((Adjustment.Kind.INVENTORY_MINUS, "−"), (Adjustment.Kind.INVENTORY_PLUS, "+")):
+            lines = [{"product": product, "qty": qty} for (product, k), qty in wanted.items() if k == kind]
             if not lines:
                 continue
             adjustment = Adjustment.objects.create(kind=kind, date=day, notes=notes)
             services.post_adjustment(adjustment, lines)
-            sign = "−" if kind == Adjustment.Kind.INVENTORY_MINUS else "+"
             self.stdout.write(f"  корректировка {day:%d.%m.%Y}: " + ", ".join(f"{r['product'].code} {sign}{r['qty']}" for r in lines))
-        if not plus and not minus:
-            self.stdout.write("  остатки совпадают с бухгалтерией")
+        if not wanted:
+            self.stdout.write("  прежняя корректировка на начало удалена — остатки совпадают с бухгалтерией")
+
+    def other_store(self):
+        """Образцы вне склада ТЭСО — списанием «бесплатные образцы» по их ТТН."""
+        for entry in OTHER_STORE:
+            if Adjustment.objects.filter(kind=Adjustment.Kind.FREE_SAMPLE, notes__contains=entry["ttn"]).exists():
+                continue
+            customer = Customer.objects.get(name=entry["customer"])
+            lines = [{"product": self.pick(list(Product.objects.filter(code_key=normalize_name(code)).select_related("customer")),
+                                           entry["customer"]), "qty": entry["qty"]} for code in entry["codes"]]
+            adjustment = Adjustment.objects.create(kind=Adjustment.Kind.FREE_SAMPLE, date=entry["date"], customer=customer,
+                                                   notes=entry["notes"] + ".")
+            services.post_adjustment(adjustment, lines)
+            self.stdout.write(f"\nОбразцы {customer}, ТТН {entry['ttn']}: списано {sum(r['qty'] for r in lines)} шт ({entry['date']:%d.%m.%Y})")
 
     def opening_cost(self, products, item, day):
         """Учётная цена бухгалтерии — партиям, из которых остаток на начало (у кого её нет или другая)."""
@@ -327,7 +367,7 @@ class Command(BaseCommand):
         diffs = []
         for item in self.ledger.items:
             products = self.products(item)
-            have = balance(products, self.ledger.date_to)
+            have = balance(products, self.ledger.date_to) - held_elsewhere(products[0].code_key, self.ledger.date_to)
             if have != item.closing_qty:
                 diffs.append(f"{products[0].code}: в сервисе {have}, в 1С {item.closing_qty}")
         self.stdout.write(f"\nКонечные остатки на {self.ledger.date_to:%d.%m.%Y}: " +

@@ -60,6 +60,8 @@ def test_import_accounting(db, ledger_file, monkeypatch):
     from .management.commands import import_accounting as cmd
 
     monkeypatch.setattr(cmd, "SAMPLE_TTNS", {"1247286": "опытные образцы"})
+    monkeypatch.setattr(cmd, "OTHER_STORE", [{"ttn": "3077953", "date": dt.date(2026, 10, 29), "customer": "МТЗ", "qty": 2,
+                                              "notes": "ТТН № 3077953", "codes": ("D75L100-2",)}])
     mtz, belaz = Customer.objects.create(name="МТЗ"), Customer.objects.create(name="БелАЗ")
     d75 = Product.objects.create(code="BSI D75L100-2", customer=mtz)
     Product.objects.create(code="BSI D89L1000-2", customer=belaz)  # в 1С 1 шт, в сервисе 0 — образец без документов
@@ -80,10 +82,13 @@ def test_import_accounting(db, ledger_file, monkeypatch):
     assert (new.status, new.received_date, line.qty_received, line.landed_price_byn) == (
         Batch.Status.RECEIVED, dt.date(2026, 6, 9), 20, Decimal("4.00"))  # 80 BYN / 20 шт
     assert old.lines.get().landed_price_byn == Decimal("3.45")  # 345 / 100 — учётная цена остатка на начало
-    opening = Adjustment.objects.get(kind=Adjustment.Kind.INVENTORY_MINUS)  # 110 в сервисе, 100 в 1С
-    assert opening.date == dt.date(2025, 12, 31) and opening.lines.get().qty == 10
+    # 110 в сервисе, 100 в 1С на складе ТЭСО + 2 образца на другом складе до 29.10.2026
+    opening = Adjustment.objects.get(kind=Adjustment.Kind.INVENTORY_MINUS)
+    assert opening.date == dt.date(2025, 12, 31) and opening.lines.get().qty == 8
     excel.refresh_from_db()
     assert excel.ttn_number == "1247029" and sum(line.qty for line in excel.lines.all()) == 80
-    sample = Adjustment.objects.get(kind=Adjustment.Kind.FREE_SAMPLE)
+    sample = Adjustment.objects.get(kind=Adjustment.Kind.FREE_SAMPLE, notes__contains="1247286")
     assert (sample.customer, sample.lines.get().qty, sample.date) == (mtz, 5, dt.date(2026, 5, 12))
-    assert services.on_hand([d75.pk])[d75.pk] == 35  # как в 1С на конец
+    other = Adjustment.objects.get(kind=Adjustment.Kind.FREE_SAMPLE, notes__contains="3077953")
+    assert (other.date, other.lines.get().qty) == (dt.date(2026, 10, 29), 2)
+    assert services.on_hand([d75.pk])[d75.pk] == 35  # как в 1С на конец: 2 образца списаны 29.10
